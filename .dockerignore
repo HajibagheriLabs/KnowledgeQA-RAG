@@ -1,0 +1,8 @@
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!src/
+!configs/
+!reports/e2e_results.csv
+**/__pycache__
