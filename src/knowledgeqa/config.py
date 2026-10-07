@@ -8,6 +8,7 @@ import yaml
 
 _COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 DEVICES = ("cpu", "cuda")
+STRATEGIES = ("none", "fixed", "sentence")
 
 
 @dataclass(frozen=True)
@@ -54,10 +55,94 @@ class DataConfig:
 
 
 @dataclass(frozen=True)
+class ChunkingConfig:
+    strategy: str
+    chunk_size: int | None
+    overlap: int
+    prepend_title: bool
+
+    def __post_init__(self) -> None:
+        if self.strategy not in STRATEGIES:
+            raise ValueError(
+                f"chunking strategy must be one of {STRATEGIES}, got {self.strategy!r}"
+            )
+        if self.strategy == "none":
+            if self.chunk_size is not None or self.overlap != 0:
+                raise ValueError(
+                    "strategy 'none' keeps whole documents: chunk_size null, overlap 0"
+                )
+        elif (
+            self.chunk_size is None
+            or self.chunk_size < 1
+            or not 0 <= self.overlap < self.chunk_size
+        ):
+            raise ValueError(
+                f"chunking needs chunk_size >= 1 and 0 <= overlap < chunk_size, "
+                f"got {self.chunk_size} and {self.overlap}"
+            )
+
+    @property
+    def name(self) -> str:
+        if self.strategy == "none":
+            return "none"
+        return f"{self.strategy}-{self.chunk_size}-{self.overlap}"
+
+
+@dataclass(frozen=True)
+class ChunkingAblation:
+    strategies: tuple[str, ...]
+    chunk_sizes: tuple[int, ...]
+    overlap_fractions: tuple[float, ...]
+    include_unchunked: bool
+
+    def __post_init__(self) -> None:
+        if "none" in self.strategies:
+            raise ValueError(
+                "chunking.ablation: use include_unchunked instead of strategy 'none'"
+            )
+        if not all(0 <= fraction < 1 for fraction in self.overlap_fractions):
+            raise ValueError("chunking.ablation: overlap fractions must lie in [0, 1)")
+
+
+@dataclass(frozen=True)
+class ChunkingSection:
+    tokenizer: HubSource
+    batch_size: int
+    default: ChunkingConfig
+    ablation: ChunkingAblation
+
+    def __post_init__(self) -> None:
+        if self.batch_size < 1:
+            raise ValueError("chunking.batch_size must be >= 1")
+        self.ablation_configs()
+
+    def ablation_configs(self) -> list[ChunkingConfig]:
+        """Every configuration of the ablation grid, sharing the default's title handling."""
+        title = self.default.prepend_title
+        grid = (
+            [ChunkingConfig("none", None, 0, title)]
+            if self.ablation.include_unchunked
+            else []
+        )
+        grid += [
+            ChunkingConfig(strategy, size, round(size * fraction), title)
+            for strategy in self.ablation.strategies
+            for size in self.ablation.chunk_sizes
+            for fraction in self.ablation.overlap_fractions
+        ]
+        return grid
+
+
+@dataclass(frozen=True)
 class Paths:
     raw: Path
+    models: Path
+    cache: Path
     reports: Path
     runs: Path
+
+    def model_dir(self, source: HubSource) -> Path:
+        return self.models / source.repo
 
 
 @dataclass(frozen=True)
@@ -67,6 +152,7 @@ class Config:
     cpu_threads: int
     paths: Paths
     data: DataConfig
+    chunking: ChunkingSection
 
     def __post_init__(self) -> None:
         if self.seed < 0:

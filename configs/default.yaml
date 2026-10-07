@@ -4,6 +4,8 @@ cpu_threads: 2
 
 paths:
   raw: data/raw
+  models: data/models
+  cache: data/cache
   reports: reports
   runs: runs
 
@@ -46,3 +48,22 @@ data:
     repo: rajpurkar/squad_v2
     revision: 3ffb306f725f7d2ce8394bc1873b24868140c412
     files: [squad_v2/*.parquet]
+
+chunking:
+  # chunk lengths are counted in the wordpiece vocabulary shared by the bert-family encoders
+  tokenizer:
+    repo: google-bert/bert-base-uncased
+    revision: 86b5e0934494bd15c9632b12f734a8a67f723594
+    files: [tokenizer.json]
+  batch_size: 2048
+  # chosen a priori; the ablation below decides on scifact's tuning split, never on test
+  default:
+    strategy: fixed
+    chunk_size: 256
+    overlap: 64
+    prepend_title: true
+  ablation:
+    strategies: [fixed, sentence]
+    chunk_sizes: [128, 256, 512]
+    overlap_fractions: [0.0, 0.25]
+    include_unchunked: true

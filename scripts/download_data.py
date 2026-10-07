@@ -14,6 +14,7 @@ from knowledgeqa.config import HubSource, load_config
 @dataclass(frozen=True)
 class RemoteFile:
     source: HubSource
+    repo_type: str
     filename: str
     size: int
     sha256: str | None
@@ -25,8 +26,12 @@ class RemoteFile:
         return self.local_dir / self.filename
 
 
-def list_remote(api: HfApi, source: HubSource, local_dir: Path) -> list[RemoteFile]:
-    info = api.dataset_info(source.repo, revision=source.revision, files_metadata=True)
+def list_remote(
+    api: HfApi, source: HubSource, repo_type: str, local_dir: Path
+) -> list[RemoteFile]:
+    info = api.repo_info(
+        source.repo, repo_type=repo_type, revision=source.revision, files_metadata=True
+    )
     matched = [
         sibling
         for sibling in info.siblings
@@ -39,6 +44,7 @@ def list_remote(api: HfApi, source: HubSource, local_dir: Path) -> list[RemoteFi
     return [
         RemoteFile(
             source=source,
+            repo_type=repo_type,
             filename=sibling.rfilename,
             size=sibling.size,
             sha256=sibling.lfs.sha256 if sibling.lfs else None,
@@ -79,7 +85,7 @@ def check_disk(directory: Path, needed_bytes: int, headroom_gb: float) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Fetch BEIR subsets and SQuAD 2.0 into data/raw."
+        description="Fetch the BEIR subsets, SQuAD 2.0 and the chunking tokenizer."
     )
     parser.add_argument("--config", default="configs/default.yaml")
     args = parser.parse_args()
@@ -90,9 +96,13 @@ def main() -> None:
     api = HfApi()
     remote: list[RemoteFile] = []
     for name, dataset in config.data.beir.items():
-        remote += list_remote(api, dataset.corpus, raw / "beir" / name)
-        remote += list_remote(api, dataset.qrels, raw / "beir" / name / "qrels")
-    remote += list_remote(api, config.data.squad, raw)
+        remote += list_remote(api, dataset.corpus, "dataset", raw / "beir" / name)
+        remote += list_remote(
+            api, dataset.qrels, "dataset", raw / "beir" / name / "qrels"
+        )
+    remote += list_remote(api, config.data.squad, "dataset", raw)
+    tokenizer = config.chunking.tokenizer
+    remote += list_remote(api, tokenizer, "model", config.paths.model_dir(tokenizer))
 
     pending = [item for item in remote if not is_intact(item)]
     check_disk(raw, sum(item.size for item in pending), config.data.disk_headroom_gb)
@@ -102,7 +112,7 @@ def main() -> None:
         hf_hub_download(
             repo_id=item.source.repo,
             filename=item.filename,
-            repo_type="dataset",
+            repo_type=item.repo_type,
             revision=item.source.revision,
             local_dir=item.local_dir,
         )
