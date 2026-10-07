@@ -27,6 +27,8 @@ class Answer:
     text: str
     # best span score minus the no-answer score of the same window; abstain when it is low
     margin: float
+    # index of the passage the span was read from, among those given for the question
+    passage: int = -1
 
 
 def load_reader(config: Config, device: torch.device) -> Reader:
@@ -47,7 +49,11 @@ def read(
 ) -> list[Answer]:
     """Best answer per question over all its passages, by margin over the no-answer score."""
     settings = reader.settings
-    pairs = [(i, passage) for i, group in enumerate(passages) for passage in group]
+    pairs = [
+        (i, j, passage)
+        for i, group in enumerate(passages)
+        for j, passage in enumerate(group)
+    ]
     best = [Answer("", -np.inf) for _ in questions]
     span_limit = torch.ones(settings.max_length, settings.max_length, dtype=torch.bool)
     span_limit = torch.triu(span_limit) & ~torch.triu(
@@ -57,8 +63,8 @@ def read(
     for start in range(0, len(pairs), settings.batch_size):
         batch = pairs[start : start + settings.batch_size]
         encoded = reader.tokenizer(
-            [questions[i] for i, _ in batch],
-            [passage for _, passage in batch],
+            [questions[i] for i, _, _ in batch],
+            [passage for _, _, passage in batch],
             truncation="only_second",
             max_length=settings.max_length,
             stride=settings.stride,
@@ -86,11 +92,11 @@ def read(
         span_start, span_end = flat // settings.max_length, flat % settings.max_length
         margins = (scores - null).tolist()
         for f, owner in enumerate(owners):
-            question, passage = batch[owner]
+            question, index, passage = batch[owner]
             if margins[f] > best[question].margin:
                 begin = offsets[f][span_start[f].item()][0]
                 finish = offsets[f][span_end[f].item()][1]
-                best[question] = Answer(passage[begin:finish], margins[f])
+                best[question] = Answer(passage[begin:finish], margins[f], index)
     return best
 
 
