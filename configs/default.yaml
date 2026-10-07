@@ -81,6 +81,41 @@ retrieval:
   query_batch_size: 64
   latency_warmup: 10
 
+dense:
+  model:
+    repo: BAAI/bge-base-en-v1.5
+    revision: a5beb1e3e68b9ab74eb54cfd186867f64f240e1a
+    files:
+      - config.json
+      - config_sentence_transformers.json
+      - modules.json
+      - sentence_bert_config.json
+      - special_tokens_map.json
+      - tokenizer.json
+      - tokenizer_config.json
+      - vocab.txt
+      - model.safetensors
+      - 1_Pooling/config.json
+  # the instruction bge was trained with for short queries against passages
+  query_prefix: "Represent this sentence for searching relevant passages: "
+  max_length: 512
+  batch_size: 128
+  fp16: true
+
+hybrid:
+  # the constant from the original reciprocal rank fusion paper, not tuned
+  rrf_k: 60
+
+index_study:
+  corpus: fiqa
+  hnsw_m: 32
+  hnsw_ef_construction: 200
+  hnsw_ef_search: [16, 32, 64, 128, 256, 512]
+  ivf_lists: 1024
+  pq_subquantizers: 96
+  pq_bits: 8
+  ivf_nprobe: [1, 4, 16, 64, 256]
+
 evaluation:
   ndcg_k: 10
   recall_k: 100

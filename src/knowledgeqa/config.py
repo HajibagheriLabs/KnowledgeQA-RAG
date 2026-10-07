@@ -175,6 +175,40 @@ class EvaluationConfig:
 
 
 @dataclass(frozen=True)
+class DenseConfig:
+    model: HubSource
+    query_prefix: str
+    max_length: int
+    batch_size: int
+    fp16: bool
+
+    def __post_init__(self) -> None:
+        if self.max_length < 1 or self.batch_size < 1:
+            raise ValueError("dense.max_length and dense.batch_size must be >= 1")
+
+
+@dataclass(frozen=True)
+class HybridConfig:
+    rrf_k: int
+
+    def __post_init__(self) -> None:
+        if self.rrf_k < 1:
+            raise ValueError("hybrid.rrf_k must be >= 1")
+
+
+@dataclass(frozen=True)
+class IndexStudyConfig:
+    corpus: str
+    hnsw_m: int
+    hnsw_ef_construction: int
+    hnsw_ef_search: tuple[int, ...]
+    ivf_lists: int
+    pq_subquantizers: int
+    pq_bits: int
+    ivf_nprobe: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class TrackingConfig:
     experiment: str
 
@@ -202,12 +236,19 @@ class Config:
     chunking: ChunkingSection
     bm25: BM25Config
     retrieval: RetrievalConfig
+    dense: DenseConfig
+    hybrid: HybridConfig
+    index_study: IndexStudyConfig
     evaluation: EvaluationConfig
     tracking: TrackingConfig
 
     def __post_init__(self) -> None:
         if self.seed < 0:
             raise ValueError("seed must be >= 0")
+        if self.index_study.corpus not in self.data.beir:
+            raise ValueError(
+                f"index_study.corpus {self.index_study.corpus!r} is not a dataset"
+            )
         if self.retrieval.candidate_chunks < self.evaluation.recall_k:
             raise ValueError(
                 "retrieval.candidate_chunks must be >= evaluation.recall_k"

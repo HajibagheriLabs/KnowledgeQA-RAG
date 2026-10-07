@@ -85,7 +85,7 @@ def check_disk(directory: Path, needed_bytes: int, headroom_gb: float) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Fetch the BEIR subsets, SQuAD 2.0 and the chunking tokenizer."
+        description="Fetch the BEIR subsets, SQuAD 2.0 and model weights."
     )
     parser.add_argument("--config", default="configs/default.yaml")
     args = parser.parse_args()
@@ -101,8 +101,8 @@ def main() -> None:
             api, dataset.qrels, "dataset", raw / "beir" / name / "qrels"
         )
     remote += list_remote(api, config.data.squad, "dataset", raw)
-    tokenizer = config.chunking.tokenizer
-    remote += list_remote(api, tokenizer, "model", config.paths.model_dir(tokenizer))
+    for model in (config.chunking.tokenizer, config.dense.model):
+        remote += list_remote(api, model, "model", config.paths.model_dir(model))
 
     pending = [item for item in remote if not is_intact(item)]
     check_disk(raw, sum(item.size for item in pending), config.data.disk_headroom_gb)
