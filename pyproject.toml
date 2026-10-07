@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling==1.32.*"]
+build-backend = "hatchling.build"
+
+[project]
+name = "knowledgeqa"
+version = "0.1.0"
+description = "Retrieval-augmented question answering with BM25, dense retrieval, reranking and abstention, evaluated on BEIR and SQuAD 2.0"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "hadi", email = "tft.hadi85@gmail.com" }]
+requires-python = "~=3.11.0"
+dependencies = [
+    "fastapi==0.142.*",
+    "huggingface-hub==1.33.*",
+    "mlflow==3.17.*",
+    "numpy==2.4.*",
+    "pandas==3.0.*",
+    "pyarrow==25.0.*",
+    "pyyaml==6.0.*",
+    "sentence-transformers==6.1.*",
+    "tokenizers==0.23.*",
+    "torch==2.14.*",
+    "transformers==5.19.*",
+    "uvicorn==0.54.*",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.*",
+    "ruff==0.16.*",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/knowledgeqa"]
+
+# cuda 12.x wheels run on a wider range of drivers than the cuda 13 default on pypi
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
