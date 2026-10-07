@@ -125,3 +125,18 @@ def latency_ms(
         "latency_p50_ms": float(np.percentile(timings, 50)),
         "latency_p95_ms": float(np.percentile(timings, 95)),
     }
+
+
+def reciprocal_rank_fusion(runs: Sequence[Run], k: int) -> Run:
+    """Score each document by the sum of 1 / (k + rank) over the runs that retrieved it."""
+    query_ids = set(runs[0])
+    if any(set(run) != query_ids for run in runs):
+        raise ValueError("runs to fuse must cover the same queries")
+    fused: Run = {}
+    for query_id in sorted(query_ids):
+        scores: dict[str, float] = {}
+        for run in runs:
+            for position, doc_id in enumerate(rank(run[query_id]), start=1):
+                scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + position)
+        fused[query_id] = scores
+    return fused
