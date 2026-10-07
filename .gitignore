@@ -1,0 +1,11 @@
+.mcp.json
+*.local.json
+data/
+outputs/
+runs/
+mlruns/
+*.pt
+*.pth
+*.onnx
+__pycache__/
+.venv/
