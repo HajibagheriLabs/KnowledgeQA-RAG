@@ -1,8 +1,9 @@
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from knowledgeqa.config import Config
@@ -115,3 +116,45 @@ def check_qrels(
             f"qrels reference {len(unknown_queries)} unknown queries and "
             f"{len(unknown_docs)} unknown documents"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SquadQuestion:
+    qid: str
+    title: str
+    context: str
+    question: str
+    answers: tuple[str, ...]
+
+
+def load_squad(config: Config, split: str) -> list[SquadQuestion]:
+    path = config.paths.raw / "squad_v2" / f"{split}-00000-of-00001.parquet"
+    frame = pd.read_parquet(path)
+    questions = [
+        SquadQuestion(
+            qid=clean_id(row["id"]),
+            title=row["title"],
+            context=row["context"],
+            question=" ".join(row["question"].split()),
+            answers=tuple(row["answers"]["text"]),
+        )
+        for row in frame.to_dict("records")
+    ]
+    if len({q.qid for q in questions}) != len(questions):
+        raise ValueError(f"squad {split}: duplicate question ids")
+    return questions
+
+
+def split_by_article(
+    questions: Sequence[SquadQuestion], tune_articles: int, seed: int
+) -> tuple[list[SquadQuestion], list[SquadQuestion]]:
+    """Hold out whole articles for tuning, so no passage is shared with the evaluation part."""
+    titles = sorted({q.title for q in questions})
+    if not 0 < tune_articles < len(titles):
+        raise ValueError(f"tune_articles must lie in (0, {len(titles)})")
+    held_out = set(
+        np.random.default_rng(seed).choice(titles, tune_articles, replace=False)
+    )
+    tune = [q for q in questions if q.title in held_out]
+    evaluation = [q for q in questions if q.title not in held_out]
+    return tune, evaluation
