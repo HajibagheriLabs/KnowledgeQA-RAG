@@ -1,0 +1,4 @@
+retriever,corpus,split,chunking,queries,documents,chunks,reranker,top_k,device,seed,ndcg_at_10,recall_at_100,mrr_at_10,latency_p50_ms,latency_p95_ms,rerank_latency_p50_ms,rerank_latency_p95_ms,first_stage_latency_p50_ms,first_stage_latency_p95_ms,first_stage_ndcg_at_10,first_stage_recall_at_100,first_stage_mrr_at_10,pairs_per_query
+dense+rerank,scifact,test,fixed-256-64,300,5183,9245,BAAI/bge-reranker-v2-m3,100,cuda,13,0.7392,0.966,0.7123,948.7612,1211.3499,922.6804,1227.3542,15.4978,28.79,0.7442,0.966,0.7085,196.7533
+dense+rerank,nfcorpus,test,fixed-256-64,323,3633,6944,BAAI/bge-reranker-v2-m3,100,cuda,13,0.3468,0.3457,0.5569,914.8599,1004.6942,900.3499,984.6061,15.1515,28.007,0.3764,0.3457,0.5668,207.5449
+dense+rerank,fiqa,test,fixed-256-64,648,57638,74688,BAAI/bge-reranker-v2-m3,100,cuda,13,0.4308,0.7388,0.5175,710.6843,855.9942,693.1025,839.9818,16.2423,17.1798,0.4073,0.7388,0.4874,181.3565
