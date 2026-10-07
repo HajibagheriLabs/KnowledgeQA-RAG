@@ -151,7 +151,7 @@ pinned by commit and fetched by `make data`; nothing is downloaded at inference.
 (FiQA's empty documents) are never embedded, since the embedding of an empty string is noise that
 could be retrieved.
 
-## Exact dense search on the GPU; FAISS indexes studied on the CPU
+## Index type: exact search, with HNSW as the next step
 
 The evaluation uses an exact `IndexFlatIP` on the GPU, the device that already holds the encoder:
 at 75k vectors exact search is cheap, removes approximation error from every reported number, and
@@ -160,6 +160,12 @@ approximate indexes would buy on the CPU, where HNSW lives in FAISS: recall rela
 search, downstream nDCG@10, single-query latency on two threads, build time and serialised size.
 IVF-PQ k-means and codebook training run on the GPU. Settings are a priori (HNSW M 32,
 efConstruction 200; IVF 1024 lists, 96 x 8-bit sub-quantisers) and swept only at query time.
+
+The study keeps exact search as the index for every corpus here: at 75k vectors it costs 14 ms on
+two CPU threads and less on the GPU, and it adds no approximation to the results. HNSW at efSearch
+128 would be the choice for a larger corpus (94.5% of the exact top 100, 0.002 nDCG@10 lost, under
+1 ms); IVF-PQ only when memory is the constraint, since its recall stops near 0.71 without a
+re-scoring step.
 
 ## Hybrid by reciprocal rank fusion, untuned
 
@@ -231,15 +237,72 @@ corpus should tune chunking on that corpus's own held-out queries; the ablation 
 
 ## Reranking is reported although it does not win on average
 
-The reranked pipeline is in the results with both sides of the trade: on
+The reranked BEIR pipeline is in the results with both sides of the trade: on
 test it moves nDCG@10 by -0.005, -0.030 and +0.024 (SciFact, NFCorpus, FiQA) for 0.7 to 0.9 s of
 added latency per query. Candidates are all chunks of the top 100 documents, scored in a single
 fp16 batch per query; a smaller candidate list or a distilled reranker would cut the cost, but
 neither was tuned, to keep the comparison with the selection run exact.
 
-## BM25 is the better SQuAD retriever
+## Where BM25 beat dense retrieval, and what follows
 
-On the SQuAD corpus BM25 puts the gold paragraph in the top 5 for 86.6% of evaluation questions
-and dense retrieval for 77.3%, the reverse of the BEIR results. This is a known property of SQuAD
-(questions were written against the paragraph and share its vocabulary), so it is reported as is
-rather than hidden behind a BEIR-only "best retriever"; the end-to-end table keeps both rows.
+On BEIR it never did: bge-base beats BM25 on all three subsets, by 0.06 nDCG@10 on SciFact and
+NFCorpus and 0.17 on FiQA, although older encoders often lose to BM25 on the first two. On SQuAD it
+does, clearly: BM25 puts the gold paragraph in the top 5 for 86.6% of evaluation questions and dense
+retrieval for 77.3%, and answerable F1 follows (0.625 vs 0.553). SQuAD questions were written by
+annotators looking at the paragraph and reuse its words, which is exactly what exact term matching
+rewards; BEIR's queries were written independently of the documents.
+
+The conclusion is that "the best retriever" is a property of a corpus and its queries, not of the
+retriever. The BEIR selection (dense) is therefore not carried over to SQuAD; the service retrieves
+with BM25 because SQuAD's own tuning articles say so, and both rows stay in every table.
+
+## Reranking on SQuAD: better retrieval, worse answers
+
+bge-reranker-v2-m3 re-scores the top 20 paragraphs of each first stage (20 rather than BEIR's 100:
+the reader reads 5, and 100 would cost about 0.5 s per question). It does what it should for
+retrieval: the gold paragraph reaches BM25's top 5 for 91.8% of questions instead of 86.6%, and
+dense retrieval's for 86.7% instead of 77.3%. End to end the picture splits. After dense retrieval
+it lifts answerable F1 from 0.553 to 0.601; after BM25 it lowers it from 0.625 to 0.613, and on the
+tuning articles too (official F1 0.766 vs 0.771). Where the gold paragraph is among the five, the
+reader scores 0.654 F1 after reranking against 0.705 without, and the tuned threshold rises from 4.3
+to 5.2: a likely reading is that the reranked five are closer to the question as a group, so the
+reader is distracted more often and needs a stricter threshold. Either way, a better retrieval
+metric did not become a better answer, and at about 130 ms per question (five times the rest of the
+pipeline) the reranker is not served.
+
+## The served pipeline is chosen on the tuning articles
+
+The service answers with one of the evaluated end-to-end rows, picked by its official F1 on the 10
+held-out tuning articles (`tune_blended_f1` in `reports/e2e_results.csv`): BM25, top 5 paragraphs,
+no reranker. The evaluation articles played no part. Its abstention threshold is read from the same
+file at start-up, so the service and the reported numbers cannot disagree about it.
+
+## Abstention threshold
+
+The reader abstains when its best span beats the no-answer score by less than a threshold. That
+threshold is fitted per pipeline on the 10 tuning articles (3,424 questions, 1,668 answerable),
+over 101 quantiles of the tuning margins, maximising SQuAD's official overall F1, which counts a
+correct abstention as an exact match and so weighs answering and abstaining by how often each is
+right. The fitted values (1.9 for the oracle passage, 4.3 to 5.3 after retrieval) sit well above
+the default of 0: with five retrieved paragraphs there are five chances for a spurious span, so the
+reader must be more confident before it answers. Answerable F1 and abstention accuracy are always
+reported separately, with the full curve, because a different application would pick a different
+point on it.
+
+## Service: one process, one GPU pipeline, one request at a time
+
+`serve.py` loads the corpus, index and models once at start-up and answers `POST /query` under a
+lock, since the models share one GPU and batching across requests would complicate latency without
+being needed at this scale. The response carries the answer (or `null` with `abstained: true`), the
+reader's margin, the five paragraphs read with their retrieval (and, if enabled, rerank) scores,
+the index of the paragraph the answer came from, and per-stage timings. No network access happens
+after start-up; the Docker image sets `HF_HUB_OFFLINE` to make that explicit. Corpora and weights
+(about 4 GB) are mounted into the container rather than baked into the image.
+
+## Latency is measured through the service
+
+`scripts/benchmark_latency.py` sends 20 warm-up and then 300 timed questions, one at a time,
+through FastAPI's in-process test client: end to end therefore includes request validation and JSON
+encoding but no network hop. Stage times come from the pipeline itself; every stage ends by copying
+its result to the host, so GPU work is finished when its timer stops. The reranked variant is timed
+too, so its cost is on record even though it is not served.
