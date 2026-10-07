@@ -186,8 +186,10 @@ e2e:
   latency_questions: 500
 
 serve:
-  # an e2e row, chosen by its tuning-article score; its threshold comes from reports/e2e_results.csv
-  pipeline: bm25+rerank
+  # the e2e row with the best tuning-article score; its threshold comes from reports/e2e_results.csv
+  pipeline: bm25
+  # the reranked variant is timed too, so its cost is on record although it is not served
+  benchmark_pipelines: [bm25, bm25+rerank]
   warmup_queries: 20
   benchmark_queries: 300
 
