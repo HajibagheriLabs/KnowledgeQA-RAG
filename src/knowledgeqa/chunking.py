@@ -149,11 +149,7 @@ def sentence_spans(text: str) -> list[tuple[int, int]]:
 def sentence_windows(
     sentences: Sequence[tuple[int, int]], size: int, overlap: int
 ) -> list[tuple[int, int]]:
-    """Pack whole sentences (token ranges) into windows of at most `size` tokens.
-
-    Up to `overlap` tokens of trailing sentences are repeated at the start of the next window;
-    a sentence longer than `size` on its own is split into fixed windows.
-    """
+    """Pack whole sentences into windows of at most `size` tokens, repeating up to `overlap`."""
     if not sentences:
         return [(0, 0)]
     length = [end - start for start, end in sentences]
@@ -164,6 +160,7 @@ def sentence_windows(
             used += length[j]
             j += 1
         if j == i:
+            # a sentence longer than the whole budget falls back to fixed windows
             start, end = sentences[i]
             windows += [
                 (start + a, start + b)
@@ -174,8 +171,7 @@ def sentence_windows(
         windows.append((sentences[i][0], sentences[j - 1][1]))
         if j == len(sentences):
             break
-        # carry trailing sentences only while the next window still has room for sentence j,
-        # and never back to sentence i, otherwise the loop would stop making progress
+        # carry sentences back only while sentence j still fits, and never to i, so i advances
         k, carried = j, 0
         while (
             k - 1 > i

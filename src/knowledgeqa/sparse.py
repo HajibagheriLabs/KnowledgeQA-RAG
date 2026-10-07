@@ -79,11 +79,7 @@ def build_index(
 def search(
     index: BM25Index, queries: Sequence[str], k: int, batch_size: int
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Top-k chunk indices and scores per query, best first.
-
-    Chunks sharing no term with the query come back with score -inf: like lucene, BM25 does not
-    retrieve them at all, and ranking them arbitrarily among zeros would add chance hits.
-    """
+    """Top-k chunk indices and scores per query, best first; -inf marks non-matching chunks."""
     stemmer = Stemmer.Stemmer(index.stemmer)
     device = index.weights.device
     n_chunks, n_terms = index.weights.shape
@@ -100,6 +96,7 @@ def search(
                 query_terms[i].index_add_(0, ids_t, torch.ones(len(ids), device=device))
         scores = torch.sparse.mm(index.weights, query_terms.T).T
         values, ids = torch.topk(scores, k, dim=1)
+        # lucene never retrieves a document without a query term; ranking zeros adds chance hits
         values = values.masked_fill(values <= 0, float("-inf"))
         top_ids.append(ids.cpu().numpy())
         top_scores.append(values.cpu().numpy())

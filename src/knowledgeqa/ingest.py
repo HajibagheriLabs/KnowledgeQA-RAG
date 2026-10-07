@@ -28,8 +28,7 @@ def clean_text(value: Any) -> str:
 
 
 def clean_id(value: Any) -> str:
-    # ids stay strings end to end: an int cast would turn "0123" into 123 and detach it
-    # from the qrels without any error
+    # ids stay strings: an int cast turns "0123" into 123 and silently detaches it from qrels
     if isinstance(value, bool) or not isinstance(value, str | int):
         raise TypeError(f"expected a string or integer id, got {value!r}")
     cleaned = str(value).strip()
@@ -39,10 +38,7 @@ def clean_id(value: Any) -> str:
 
 
 def normalize_document(record: Mapping[str, Any], source: str) -> Document:
-    """Map one raw BEIR corpus record onto the internal schema.
-
-    Empty documents are kept: FiQA ships some, and its qrels mark several of them relevant.
-    """
+    """Map one raw BEIR corpus record onto the internal schema, keeping empty documents."""
     return Document(
         doc_id=clean_id(record["_id"]),
         title=clean_text(record.get("title")),

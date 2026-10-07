@@ -17,12 +17,7 @@ def max_pool(
     chunk_doc_ids: Sequence[str],
     depth: int,
 ) -> Run:
-    """Collapse chunk hits into a document run, scoring each document by its best chunk.
-
-    A score of -inf marks a padding hit. A document whose best chunk was not retrieved cannot
-    outscore any retrieved chunk, so the top `depth` documents are exact when the hits are
-    exhaustive or cover at least `depth` documents; a truncated list covering fewer raises.
-    """
+    """Score each document by its best chunk hit; hits scored -inf are padding."""
     if not len(query_ids) == len(chunk_hits) == len(chunk_scores):
         raise ValueError("query_ids, chunk_hits and chunk_scores differ in length")
     run: Run = {}
@@ -34,6 +29,7 @@ def max_pool(
             doc_id = chunk_doc_ids[hit]
             if score > docs.get(doc_id, -math.inf):
                 docs[doc_id] = score
+        # unretrieved chunks score below every hit, so only a short truncated list is unsafe
         truncated = len(hits) < len(chunk_doc_ids) and bool(np.isfinite(scores).all())
         if truncated and len(docs) < depth:
             raise ValueError(
