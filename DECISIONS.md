@@ -139,3 +139,43 @@ zero scores, which would add chance hits to Recall@100.
 MLflow 3.17 refuses the plain `mlruns/` file store, so runs go to SQLite at `mlruns/mlflow.db` with
 artifacts beside it; everything stays local and gitignored. Each run directory under `runs/` keeps
 the exact config and the TREC run files.
+
+## Dense retriever: bge-base-en-v1.5
+
+A strong general-purpose base-size encoder with published BEIR numbers to check against, a
+512-token window and the same WordPiece vocabulary the chunk sizes are counted in. Queries get the
+instruction prefix the model was trained with; embeddings are unit-normalised, so inner product is
+cosine similarity. Whole-document results land within 0.002 of the published BGE-base nDCG@10 and
+Recall@100 on all three subsets, which validates encoding, pooling and the prefix. Weights are
+pinned by commit and fetched by `make data`; nothing is downloaded at inference. Empty chunks
+(FiQA's empty documents) are never embedded, since the embedding of an empty string is noise that
+could be retrieved.
+
+## Exact dense search on the GPU; FAISS indexes studied on the CPU
+
+The evaluation uses an exact `IndexFlatIP` on the GPU, the device that already holds the encoder:
+at 75k vectors exact search is cheap, removes approximation error from every reported number, and
+is bitwise reproducible across processes (verified, like BM25). The index study then measures what
+approximate indexes would buy on the CPU, where HNSW lives in FAISS: recall relative to exact
+search, downstream nDCG@10, single-query latency on two threads, build time and serialised size.
+IVF-PQ k-means and codebook training run on the GPU. Settings are a priori (HNSW M 32,
+efConstruction 200; IVF 1024 lists, 96 x 8-bit sub-quantisers) and swept only at query time.
+
+## Hybrid by reciprocal rank fusion, untuned
+
+Fusion uses RRF with k = 60, the constant from Cormack et al. (2009), on the document rankings of
+BM25 and dense retrieval. It needs no score normalisation, which matters because BM25 scores are
+unbounded and cosine scores are not. A weighted fusion could be tuned on the tuning splits, but RRF
+is the standard untuned baseline, and its failure on FiQA, where BM25 is much weaker than dense, is
+itself the finding: equal-weight fusion assumes two comparably good rankers.
+
+## Embeddings cached by content
+
+Encoding all corpora takes about four minutes on the GPU. Embeddings are memoised in `data/cache`
+under a SHA-256 of the texts and every encoder setting (model revision, length, precision), and the
+cache stores the original encode time, so reported index times stay honest on cached reruns.
+
+## README tables are generated
+
+`make report` renders every results table from the CSVs in `reports/` into the README between
+marker comments, so a number in the README cannot drift from the run that produced it.

@@ -1,0 +1,7 @@
+retriever,corpus,split,chunking,queries,documents,chunks,device,seed,ndcg_at_10,recall_at_100,mrr_at_10,latency_p50_ms,latency_p95_ms,index_seconds
+dense,scifact,test,none,300,5183,5183,cuda,13,0.7417,0.9667,0.7054,15.9678,19.9942,13.2099
+dense,scifact,test,fixed-256-64,300,5183,9245,cuda,13,0.7442,0.966,0.7085,16.3243,21.4181,16.1099
+dense,nfcorpus,test,none,323,3633,3633,cuda,13,0.3736,0.3368,0.5626,15.6408,21.2048,10.0006
+dense,nfcorpus,test,fixed-256-64,323,3633,6944,cuda,13,0.3764,0.3457,0.5668,15.8243,23.0082,12.7415
+dense,fiqa,test,none,648,57638,57638,cuda,13,0.4064,0.7418,0.4857,17.2089,23.5806,89.1631
+dense,fiqa,test,fixed-256-64,648,57638,74688,cuda,13,0.4073,0.7388,0.4874,17.8572,25.9717,97.9551
