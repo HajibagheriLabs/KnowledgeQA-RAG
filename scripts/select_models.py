@@ -96,7 +96,7 @@ def main() -> None:
             print(
                 f"{name:9s} {split:6s} {best_stage} + {reranker_name}: {ndcg}={metrics[ndcg]:.4f}"
             )
-        # release each candidate before loading the next
+        # the caching allocator would otherwise keep each model's memory for the next one
         del reranker
         gc.collect()
         torch.cuda.empty_cache()

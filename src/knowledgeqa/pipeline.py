@@ -15,7 +15,6 @@ from knowledgeqa.ingest import Document, squad_paragraphs
 from knowledgeqa.reader import Reader, read
 from knowledgeqa.rerank import candidate_pairs, rerank_run
 
-# (query ids, query texts, batch size) -> run
 Search = Callable[[Sequence[str], Sequence[str], int], Run]
 
 
@@ -136,7 +135,6 @@ class CitedChunk:
 
 @dataclass(frozen=True)
 class Response:
-    # None when the reader abstains
     answer: str | None
     abstained: bool
     # reader margin over its no-answer score; None when nothing was retrieved

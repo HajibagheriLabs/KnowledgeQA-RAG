@@ -197,7 +197,6 @@ def main() -> None:
                     answers, subset, threshold
                 )
 
-        # latency on a fixed sample of evaluation questions, each answered on its own
         timings: dict[str, list[float]] = {"retrieval": [], "rerank": [], "reader": []}
         if row != "oracle":
             first = row.removesuffix("+rerank")
