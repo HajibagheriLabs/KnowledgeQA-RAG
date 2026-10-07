@@ -1,3 +1,4 @@
+import hashlib
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -143,6 +144,20 @@ def load_squad(config: Config, split: str) -> list[SquadQuestion]:
     if len({q.qid for q in questions}) != len(questions):
         raise ValueError(f"squad {split}: duplicate question ids")
     return questions
+
+
+def paragraph_id(context: str) -> str:
+    return hashlib.sha1(context.encode()).hexdigest()[:16]
+
+
+def squad_paragraphs(config: Config) -> list[Document]:
+    """Every distinct paragraph of the configured SQuAD splits, in first-seen order."""
+    paragraphs: dict[str, Document] = {}
+    for split in config.e2e.corpus_splits:
+        for q in load_squad(config, split):
+            doc_id = paragraph_id(q.context)
+            paragraphs.setdefault(doc_id, Document(doc_id, q.title, q.context, "squad"))
+    return list(paragraphs.values())
 
 
 def split_by_article(
