@@ -3,6 +3,7 @@ import random
 from datetime import UTC, datetime
 from pathlib import Path
 
+import mlflow
 import numpy as np
 import torch
 import yaml
@@ -33,3 +34,18 @@ def start_run(config: Config, name: str) -> Path:
         yaml.safe_dump(config_to_dict(config), sort_keys=False)
     )
     return run_dir
+
+
+def start_tracking(config: Config) -> None:
+    config.paths.mlruns.mkdir(parents=True, exist_ok=True)
+    mlflow.set_tracking_uri(f"sqlite:///{config.paths.mlruns / 'mlflow.db'}")
+    mlflow.set_experiment(config.tracking.experiment)
+
+
+def log_result(
+    name: str, params: dict, metrics: dict[str, float], run_dir: Path
+) -> None:
+    with mlflow.start_run(run_name=name):
+        mlflow.log_params(params)
+        mlflow.log_metrics(metrics)
+        mlflow.log_artifact(str(run_dir / "config.yaml"))
