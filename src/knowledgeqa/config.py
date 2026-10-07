@@ -241,10 +241,13 @@ class EndToEndConfig:
     eval_split: str
     tune_articles: int
     top_k: int
+    rerank_depth: int
     threshold_points: int
     latency_questions: int
 
     def __post_init__(self) -> None:
+        if self.rerank_depth < self.top_k:
+            raise ValueError("e2e.rerank_depth must be >= e2e.top_k")
         if self.eval_split not in self.corpus_splits:
             raise ValueError("e2e.eval_split must be one of e2e.corpus_splits")
         if min(self.tune_articles, self.top_k, self.latency_questions) < 1:

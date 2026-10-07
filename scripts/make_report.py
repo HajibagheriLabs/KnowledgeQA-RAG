@@ -128,26 +128,52 @@ def ablation_table(ablations: pd.DataFrame, ndcg: str) -> pd.DataFrame:
 
 def e2e_table(e2e: pd.DataFrame, recall: str) -> pd.DataFrame:
     def pair(prefix: str) -> pd.Series:
-        return (
-            e2e[f"{prefix}_p50_ms"].map("{:.0f}".format)
-            + " / "
-            + e2e[f"{prefix}_p95_ms"].map("{:.0f}".format)
-        )
+        return [
+            "-"
+            if pd.isna(row[f"{prefix}_p50_ms"])
+            else f"{row[f'{prefix}_p50_ms']:.0f} / {row[f'{prefix}_p95_ms']:.0f}"
+            for _, row in e2e.iterrows()
+        ]
 
-    labels = {"oracle": "Oracle passage", "bm25": "BM25", "dense": "Dense (bge-base)"}
+    labels = {
+        "oracle": "Oracle passage",
+        "bm25": "BM25",
+        "dense": "Dense (bge-base)",
+        "bm25+rerank": "BM25 + rerank (bge-v2-m3)",
+        "dense+rerank": "Dense + rerank (bge-v2-m3)",
+    }
     return pd.DataFrame(
         {
             "Retrieval": e2e["row"].map(labels),
-            "Passages read": e2e["passages_read"],
-            "Gold passage retrieved": e2e[recall].map(
+            f"Gold passage in top {recall.rsplit('_', 1)[1]}": e2e[recall].map(
                 lambda v: "-" if pd.isna(v) else f"{v:.3f}"
             ),
             "Answerable EM": e2e["answerable_em"].map("{:.3f}".format),
             "Answerable F1": e2e["answerable_f1"].map("{:.3f}".format),
             "Abstention accuracy": e2e["abstention_accuracy"].map("{:.3f}".format),
+            "Tuning-article F1": e2e["tune_blended_f1"].map("{:.3f}".format),
             "Retrieval p50 / p95 ms": pair("retrieval"),
+            "Rerank p50 / p95 ms": pair("rerank"),
             "Reader p50 / p95 ms": pair("reader"),
             "End to end p50 / p95 ms": pair("end_to_end"),
+        }
+    )
+
+
+def latency_table(latency: pd.DataFrame) -> pd.DataFrame:
+    stages = {
+        "retrieval": "Retrieval",
+        "rerank": "Reranking",
+        "reader": "Reading",
+        "end_to_end": "End to end (HTTP request)",
+    }
+    return pd.DataFrame(
+        {
+            "Stage": latency["stage"].map(stages),
+            "p50 ms": latency["p50_ms"].map("{:.1f}".format),
+            "p95 ms": latency["p95_ms"].map("{:.1f}".format),
+            "Mean ms": latency["mean_ms"].map("{:.1f}".format),
+            "Queries": latency["queries"],
         }
     )
 
@@ -212,6 +238,9 @@ def main() -> None:
     if e2e.is_file():
         recall = f"retrieval_recall_at_{config.e2e.top_k}"
         readme = fill(readme, "e2e", e2e_table(pd.read_csv(e2e), recall))
+    latency = reports / "latency.csv"
+    if latency.is_file():
+        readme = fill(readme, "latency", latency_table(pd.read_csv(latency)))
     args.readme.write_text(readme)
     print(
         f"wrote {reports / 'results.csv'} from {len(parts)} file(s) and refreshed {args.readme}"

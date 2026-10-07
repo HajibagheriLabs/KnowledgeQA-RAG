@@ -1,26 +1,21 @@
 import argparse
-import hashlib
 import time
 
 import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
-from knowledgeqa.chunking import chunk_corpus, corpus_offsets, load_tokenizer
-from knowledgeqa.config import ChunkingConfig, load_config
+from knowledgeqa.config import load_config
 from knowledgeqa.dense import load_encoder
 from knowledgeqa.evaluate import rank
-from knowledgeqa.ingest import Document, load_squad, split_by_article
-from knowledgeqa.pipeline import Stage, bm25_stage, dense_stage
+from knowledgeqa.ingest import load_squad, paragraph_id, split_by_article
+from knowledgeqa.pipeline import QAPipeline, bm25_search, dense_search, squad_corpus
 from knowledgeqa.reader import Answer, load_reader, read, score_answers, token_f1
+from knowledgeqa.rerank import candidate_pairs, chunks_by_doc, load_reranker, rerank_run
 from knowledgeqa.runtime import log_result, setup, start_run, start_tracking
 
 # reference categorical slots 1-2, validated for colour-vision deficiency on a light surface
 COLORS = {"oracle": "#2a78d6", "pipeline": "#eb6834"}
-
-
-def paragraph_id(context: str) -> str:
-    return hashlib.sha1(context.encode()).hexdigest()[:16]
 
 
 def blended(scores: dict[str, float], key: str) -> float:
@@ -97,7 +92,7 @@ def plot(curves: pd.DataFrame, chosen: pd.DataFrame, path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Retrieve, read and abstain on SQuAD 2.0, against an oracle passage."
+        description="Retrieve, rerank, read and abstain on SQuAD 2.0, against an oracle passage."
     )
     parser.add_argument("--config", default="configs/default.yaml")
     args = parser.parse_args()
@@ -109,21 +104,12 @@ def main() -> None:
 
     questions = load_squad(config, e2e.eval_split)
     tune, evaluation = split_by_article(questions, e2e.tune_articles, config.seed)
-    paragraphs: dict[str, Document] = {}
-    for split in e2e.corpus_splits:
-        for q in load_squad(config, split):
-            paragraphs.setdefault(
-                paragraph_id(q.context),
-                Document(paragraph_id(q.context), q.title, q.context, "squad"),
-            )
-    docs = list(paragraphs.values())
-    whole = ChunkingConfig("none", None, 0, config.chunking.default.prepend_title)
-    chunks = chunk_corpus(
-        docs, corpus_offsets(config, "squad", docs, load_tokenizer(config)), whole
-    )
-    text_of = {doc.doc_id: doc.text for doc in docs}
+    docs, chunks = squad_corpus(config)
+    by_id = {doc.doc_id: doc for doc in docs}
+    by_doc = chunks_by_doc(chunks)
     reader = load_reader(config, device)
     encoder = load_encoder(config, device)
+    reranker = load_reranker(config, config.rerank.model, device)
     rng = np.random.default_rng(config.seed)
     timed = list(
         rng.choice(
@@ -134,20 +120,28 @@ def main() -> None:
     every = tune + evaluation
     ids = [q.qid for q in every]
     texts = [q.question for q in every]
-    stages: dict[str, Stage] = {
-        "bm25": bm25_stage(config, device, chunks, ids, texts),
-        "dense": dense_stage(
-            config,
-            encoder,
-            chunks,
-            ids,
-            texts,
-            config.paths.cache / "squad-none-dense.npz",
-        ),
+    searches = {
+        "bm25": bm25_search(config, device, chunks)[0],
+        "dense": dense_search(
+            config, encoder, chunks, config.paths.cache / "squad-none-dense.npz"
+        )[0],
     }
-    retrieved: dict[str, dict[str, list[str]]] = {
-        name: {qid: rank(stage.run[qid])[: e2e.top_k] for qid in ids}
-        for name, stage in stages.items()
+    batch_sizes = {
+        "bm25": config.retrieval.query_batch_size,
+        "dense": config.dense.batch_size,
+    }
+    runs = {
+        name: search(ids, texts, batch_sizes[name]) for name, search in searches.items()
+    }
+    queries = dict(zip(ids, texts, strict=True))
+    for name in list(runs):
+        pairs = candidate_pairs(runs[name], ids, by_doc, e2e.rerank_depth)
+        runs[f"{name}+rerank"] = rerank_run(
+            reranker, ids, pairs, queries, chunks, config.rerank.batch_size
+        )
+    retrieved = {
+        name: {qid: rank(run[qid])[: e2e.top_k] for qid in ids}
+        for name, run in runs.items()
     }
     rows, curves, chosen = [], [], []
     for row in ["oracle", *retrieved]:
@@ -155,7 +149,7 @@ def main() -> None:
         def passages(group, row=row):
             if row == "oracle":
                 return [[q.context] for q in group]
-            return [[text_of[d] for d in retrieved[row][q.qid]] for q in group]
+            return [[by_id[d].text for d in retrieved[row][q.qid]] for q in group]
 
         answers: dict[str, Answer] = {}
         for group in (tune, evaluation):
@@ -176,9 +170,21 @@ def main() -> None:
             )
         threshold = tune_threshold(answers, tune_golds, e2e.threshold_points)
         metrics = score_answers(answers, golds, threshold)
+        tuned = score_answers(answers, tune_golds, threshold)
+        metrics["tune_blended_f1"] = blended(tuned, "answerable_f1")
         if row != "oracle":
             hit = [paragraph_id(q.context) in retrieved[row][q.qid] for q in evaluation]
             metrics[f"retrieval_recall_at_{e2e.top_k}"] = float(np.mean(hit))
+            # the reranker can only promote what the first stage put in its pool
+            pool = runs[row.removesuffix("+rerank")]
+            metrics[f"first_stage_recall_at_{e2e.rerank_depth}"] = float(
+                np.mean(
+                    [
+                        paragraph_id(q.context) in rank(pool[q.qid])[: e2e.rerank_depth]
+                        for q in evaluation
+                    ]
+                )
+            )
             # splits the answerable error into questions retrieval failed and ones the reader failed
             for found, label in ((True, "gold_retrieved"), (False, "gold_missed")):
                 subset = [
@@ -192,30 +198,42 @@ def main() -> None:
                 )
 
         # latency on a fixed sample of evaluation questions, each answered on its own
-        retrieval_ms, reader_ms = [], []
+        timings: dict[str, list[float]] = {"retrieval": [], "rerank": [], "reader": []}
+        if row != "oracle":
+            first = row.removesuffix("+rerank")
+            pipeline = QAPipeline(
+                search=searches[first],
+                chunks=chunks,
+                by_doc=by_doc,
+                docs=by_id,
+                reranker=reranker if row.endswith("+rerank") else None,
+                reader=reader,
+                threshold=threshold,
+                rerank_depth=e2e.rerank_depth,
+                rerank_batch_size=config.rerank.batch_size,
+                top_k=e2e.top_k,
+            )
         for index in timed:
             q = evaluation[index]
-            started = time.perf_counter()
-            if row != "oracle":
-                stages[row].answer(q.question)
-            middle = time.perf_counter()
-            read(reader, [q.question], passages([q]))
-            reader_ms.append((time.perf_counter() - middle) * 1000)
-            retrieval_ms.append((middle - started) * 1000)
-        total = np.array(retrieval_ms) + np.array(reader_ms)
-        for label, values in (
-            ("retrieval", retrieval_ms),
-            ("reader", reader_ms),
-            ("end_to_end", total),
-        ):
-            metrics[f"{label}_p50_ms"] = float(np.percentile(values, 50))
-            metrics[f"{label}_p95_ms"] = float(np.percentile(values, 95))
+            if row == "oracle":
+                started = time.perf_counter()
+                read(reader, [q.question], passages([q]))
+                spent = {"reader": (time.perf_counter() - started) * 1000}
+            else:
+                spent = pipeline.answer(q.question).timings_ms
+            for stage, values in timings.items():
+                values.append(spent.get(stage, np.nan))
+        timings["end_to_end"] = list(np.nansum(list(timings.values()), axis=0))
+        for stage, values in timings.items():
+            for p in (50, 95):
+                metrics[f"{stage}_p{p}_ms"] = float(np.percentile(values, p))
         metrics["threshold"] = threshold
         params = {
             "row": row,
             "split": f"{e2e.eval_split} minus {e2e.tune_articles} tuning articles",
             "paragraphs": len(docs) if row != "oracle" else 1,
             "passages_read": e2e.top_k if row != "oracle" else 1,
+            "reranked": e2e.rerank_depth if row.endswith("+rerank") else 0,
             "reader": config.reader.model.repo,
             "seed": config.seed,
         }
@@ -237,13 +255,15 @@ def main() -> None:
     frame.to_csv(run_dir / "e2e_results.csv", index=False)
     curve = pd.DataFrame(curves).round(4)
     curve.to_csv(config.paths.reports / "e2e_curve.csv", index=False)
-    best = frame.drop(index=0)["answerable_f1"].idxmax()
+    # the plotted pipeline is the one the tuning articles favour, as for serving
+    best = frame.drop(index=0)["tune_blended_f1"].idxmax()
     shown = {"oracle", frame.loc[best, "row"]}
     plot(
         curve[curve["row"].isin(shown)],
         pd.DataFrame(chosen),
         config.paths.reports / "e2e_curve.png",
     )
+    print(f"best pipeline on the tuning articles: {frame.loc[best, 'row']}")
     print(f"wrote reports/e2e_results.csv, e2e_curve.csv, e2e_curve.png and {run_dir}")
 
 

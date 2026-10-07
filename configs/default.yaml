@@ -180,6 +180,8 @@ e2e:
   # dev articles held out for the abstention threshold; the rest is evaluation
   tune_articles: 10
   top_k: 5
+  # paragraphs the cross-encoder re-scores; fixed a priori to keep reranking near 100 ms per question
+  rerank_depth: 20
   threshold_points: 101
   latency_questions: 500
 
