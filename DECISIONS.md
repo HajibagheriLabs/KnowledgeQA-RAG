@@ -78,3 +78,58 @@ evaluated later, and any choice among its configurations is made on SciFact's tu
 
 Tokenising FiQA takes ~17 s per run. Offsets are memoised in `data/cache` under a SHA-256 of the
 exact document texts and the serialised tokenizer, so a stale cache can never be served.
+
+## BM25: our own Lucene-formula implementation
+
+`rank_bm25` uses a different IDF (negative values floored at a fraction of the mean) and loops over
+every document in Python for each query term; Pyserini reproduces Lucene exactly but needs a JVM
+and a Lucene index per chunking configuration. `sparse.py` instead implements Lucene's BM25
+(`idf = ln(1 + (N - df + 0.5) / (df + 0.5))`, `tf / (tf + k1 (1 - b + b dl / avgdl))`) with an
+approximation of Anserini's analyzer: lowercase, word tokens kept whole across `.` and `'`
+(close to UAX#29), possessive `'s` stripped, Lucene's 33 English stopwords, Porter stemming. The
+index is a sparse chunk x term weight matrix, so scoring every query is one sparse-dense product,
+exact (no pruning) and bitwise deterministic across runs; it runs on the configured device, the GPU
+by default, the same device the dense encoders will use. `k1 = 0.9, b = 0.4` are Anserini's
+defaults and are not tuned.
+
+## BM25 reproduces the published numbers
+
+Whole-document BM25 (title and text concatenated, as in Pyserini's "flat" BEIR baseline) against
+the [published reproduction](https://castorini.github.io/pyserini/2cr/beir.html):
+
+| Subset   | nDCG@10 ours / published | Recall@100 ours / published |
+|----------|--------------------------|-----------------------------|
+| SciFact  | 0.678 / 0.679            | 0.925 / 0.925               |
+| NFCorpus | 0.320 / 0.322            | 0.246 / 0.246               |
+| FiQA     | 0.235 / 0.236            | 0.541 / 0.539               |
+
+Every difference is at most 0.003, the size expected from Lucene's lossy one-byte document-length
+encoding and its UAX#29 tokenizer versus our regex (Kamphuis et al., "Which BM25 Do You Mean?",
+ECIR 2020). The qrels handling is therefore right, and the BEIR paper's Elasticsearch numbers
+(0.665, 0.325, 0.236) are in the same range. Independently, `scripts/crosscheck_metrics.py`
+re-scores the saved runs with pytrec_eval and agrees to 1e-15 on all six.
+
+## Metric definitions follow trec_eval
+
+nDCG uses linear gains (NFCorpus has grades 1 and 2) and the ideal ranking of all judged relevant
+documents; ties are broken by document id descending, as trec_eval does; every judged query counts,
+even one whose ranking is empty. MRR@10 is not reported by BEIR and is computed the usual way
+(reciprocal rank of the first relevant document in the top 10). BEIR's evaluator by default also
+drops any retrieved document whose id equals the query id, a fix for ArguAna and Quora where
+queries are drawn from the corpus; it is not applied here, although 55 FiQA test query ids happen
+to coincide with unrelated document ids.
+
+## Chunk scores become document scores by max-pooling
+
+Retrieval runs over chunks; each document takes the score of its best chunk (MaxP). Pooling the
+top 1,000 chunks is exact for the top 100 documents whenever they cover at least 100 documents,
+because a document whose best chunk was not retrieved cannot outscore a retrieved one; when the
+candidates do not, `max_pool` raises instead of returning a silently truncated ranking. Chunks with
+no query term in common are not retrieved at all, as in Lucene, rather than ranked arbitrarily among
+zero scores, which would add chance hits to Recall@100.
+
+## Experiment tracking
+
+MLflow 3.17 refuses the plain `mlruns/` file store, so runs go to SQLite at `mlruns/mlflow.db` with
+artifacts beside it; everything stays local and gitignored. Each run directory under `runs/` keeps
+the exact config and the TREC run files.
