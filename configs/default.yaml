@@ -185,6 +185,12 @@ e2e:
   threshold_points: 101
   latency_questions: 500
 
+serve:
+  # an e2e row, chosen by its tuning-article score; its threshold comes from reports/e2e_results.csv
+  pipeline: bm25+rerank
+  warmup_queries: 20
+  benchmark_queries: 300
+
 index_study:
   corpus: fiqa
   hnsw_m: 32

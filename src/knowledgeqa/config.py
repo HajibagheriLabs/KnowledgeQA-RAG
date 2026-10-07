@@ -10,6 +10,7 @@ _COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 DEVICES = ("cpu", "cuda")
 STRATEGIES = ("none", "fixed", "sentence")
 FIRST_STAGES = ("bm25", "dense", "hybrid")
+SERVE_FIRST_STAGES = ("bm25", "dense")
 
 
 @dataclass(frozen=True)
@@ -259,6 +260,30 @@ class EndToEndConfig:
 
 
 @dataclass(frozen=True)
+class ServeConfig:
+    pipeline: str
+    warmup_queries: int
+    benchmark_queries: int
+
+    @property
+    def first_stage(self) -> str:
+        return self.pipeline.removesuffix("+rerank")
+
+    @property
+    def rerank(self) -> bool:
+        return self.pipeline.endswith("+rerank")
+
+    def __post_init__(self) -> None:
+        if self.first_stage not in SERVE_FIRST_STAGES:
+            raise ValueError(
+                f"serve.pipeline must be one of {SERVE_FIRST_STAGES}, optionally "
+                f"followed by '+rerank'; got {self.pipeline!r}"
+            )
+        if self.warmup_queries < 0 or self.benchmark_queries < 1:
+            raise ValueError("serve.warmup_queries >= 0 and benchmark_queries >= 1")
+
+
+@dataclass(frozen=True)
 class IndexStudyConfig:
     corpus: str
     hnsw_m: int
@@ -303,6 +328,7 @@ class Config:
     rerank: RerankConfig
     reader: ReaderConfig
     e2e: EndToEndConfig
+    serve: ServeConfig
     index_study: IndexStudyConfig
     evaluation: EvaluationConfig
     tracking: TrackingConfig
