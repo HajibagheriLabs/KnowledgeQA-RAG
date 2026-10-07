@@ -1,0 +1,48 @@
+seed: 13
+device: cuda
+cpu_threads: 2
+
+paths:
+  raw: data/raw
+  reports: reports
+  runs: runs
+
+data:
+  disk_headroom_gb: 2.0
+  eval_split: test
+  beir:
+    scifact:
+      corpus:
+        repo: BeIR/scifact
+        revision: b3b5335604bf5ee3c4447671af975ea25143d4f5
+        files: [corpus/*.parquet, queries/*.parquet]
+      qrels:
+        repo: BeIR/scifact-qrels
+        revision: 2938d17dc3b09882fdb8c12bbbe2e2dc0e75a029
+        files: ["*.tsv"]
+      # beir ships no dev split for scifact
+      tune_split: train
+    nfcorpus:
+      corpus:
+        repo: BeIR/nfcorpus
+        revision: b5026a0e96e8a7ac4f95f482a596389289d46269
+        files: [corpus/*.parquet, queries/*.parquet]
+      qrels:
+        repo: BeIR/nfcorpus-qrels
+        revision: a451b3b26d3ae1358f259c1a3a4dd61fcea35a65
+        files: ["*.tsv"]
+      tune_split: dev
+    fiqa:
+      corpus:
+        repo: BeIR/fiqa
+        revision: 979c07a7cb5ccc6ca009792241fa1250b98055dd
+        files: [corpus/*.parquet, queries/*.parquet]
+      qrels:
+        repo: BeIR/fiqa-qrels
+        revision: 252958f2d646e22cab6d0c72dd3f0d5de6d0655a
+        files: ["*.tsv"]
+      tune_split: dev
+  squad:
+    repo: rajpurkar/squad_v2
+    revision: 3ffb306f725f7d2ce8394bc1873b24868140c412
+    files: [squad_v2/*.parquet]
