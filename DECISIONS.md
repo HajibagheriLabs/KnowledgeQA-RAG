@@ -87,10 +87,16 @@ and a Lucene index per chunking configuration. `sparse.py` instead implements Lu
 (`idf = ln(1 + (N - df + 0.5) / (df + 0.5))`, `tf / (tf + k1 (1 - b + b dl / avgdl))`) with an
 approximation of Anserini's analyzer: lowercase, word tokens kept whole across `.` and `'`
 (close to UAX#29), possessive `'s` stripped, Lucene's 33 English stopwords, Porter stemming. The
-index is a sparse chunk x term weight matrix, so scoring every query is one sparse-dense product,
-exact (no pruning) and bitwise deterministic across runs; it runs on the configured device, the GPU
-by default, the same device the dense encoders will use. `k1 = 0.9, b = 0.4` are Anserini's
-defaults and are not tuned.
+index stores each term's postings with their precomputed BM25 contributions, and a query is scored
+term at a time: every posting list is added into the query's score vector over all chunks, exactly,
+with no pruning. It runs on the configured device, the GPU by default, the same device the dense
+encoders will use. `k1 = 0.9, b = 0.4` are Anserini's defaults and are not tuned.
+
+Scores are bitwise reproducible across processes: terms are added in a fixed order and no chunk
+repeats within a posting list, so no two additions ever race. A first version scored all queries
+with one cuSPARSE sparse-dense product instead; its results drifted by up to 4e-6 between
+processes, even with PyTorch's deterministic mode on. Rankings and metrics never changed, but
+identical runs should give identical files, and now do.
 
 ## BM25 reproduces the published numbers
 

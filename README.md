@@ -34,12 +34,12 @@ Produced by `make eval`; full table in [`reports/retrieval_bm25.csv`](reports/re
 
 | Chunking        | Corpus   | Documents | Chunks | nDCG@10 | Recall@100 | MRR@10 | p50 ms | p95 ms |
 |-----------------|----------|-----------|--------|---------|------------|--------|--------|--------|
-| whole documents | SciFact  | 5,183     | 5,183  | 0.678   | 0.925      | 0.643  | 0.88   | 1.07   |
-| fixed 256 / 64  | SciFact  | 5,183     | 9,245  | 0.684   | 0.924      | 0.649  | 0.95   | 1.59   |
-| whole documents | NFCorpus | 3,633     | 3,633  | 0.320   | 0.246      | 0.521  | 0.85   | 2.06   |
-| fixed 256 / 64  | NFCorpus | 3,633     | 6,944  | 0.316   | 0.243      | 0.514  | 0.86   | 1.92   |
-| whole documents | FiQA     | 57,638    | 57,638 | 0.235   | 0.541      | 0.295  | 1.26   | 3.57   |
-| fixed 256 / 64  | FiQA     | 57,638    | 74,688 | 0.232   | 0.530      | 0.293  | 1.18   | 1.46   |
+| whole documents | SciFact  | 5,183     | 5,183  | 0.678   | 0.925      | 0.643  | 0.95   | 1.90   |
+| fixed 256 / 64  | SciFact  | 5,183     | 9,245  | 0.684   | 0.924      | 0.649  | 0.96   | 1.25   |
+| whole documents | NFCorpus | 3,633     | 3,633  | 0.320   | 0.246      | 0.521  | 0.61   | 0.91   |
+| fixed 256 / 64  | NFCorpus | 3,633     | 6,944  | 0.316   | 0.243      | 0.514  | 0.64   | 1.04   |
+| whole documents | FiQA     | 57,638    | 57,638 | 0.235   | 0.541      | 0.295  | 1.34   | 1.79   |
+| fixed 256 / 64  | FiQA     | 57,638    | 74,688 | 0.232   | 0.530      | 0.293  | 1.37   | 1.98   |
 
 Whole-document BM25 lands within 0.003 of the published nDCG@10 and Recall@100 (SciFact
 0.679 / 0.925, NFCorpus 0.322 / 0.246, FiQA 0.236 / 0.539) on every subset, which validates the
