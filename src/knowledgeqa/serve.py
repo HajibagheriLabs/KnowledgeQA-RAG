@@ -2,7 +2,6 @@ import os
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 import pandas as pd
 import torch
@@ -68,10 +67,10 @@ def load_pipeline(config: Config, device: torch.device) -> QAPipeline:
     )
 
 
-def create_app(config_path: str | Path | None = None) -> FastAPI:
-    """The service; the config path falls back to $KNOWLEDGEQA_CONFIG, then the default."""
-    path = config_path or os.environ.get("KNOWLEDGEQA_CONFIG", DEFAULT_CONFIG)
-    config = load_config(path)
+def create_app(config: Config | None = None) -> FastAPI:
+    """The service; without a config it loads $KNOWLEDGEQA_CONFIG, else the default."""
+    if config is None:
+        config = load_config(os.environ.get("KNOWLEDGEQA_CONFIG", DEFAULT_CONFIG))
     # one gpu pipeline, so requests are answered one at a time
     lock = threading.Lock()
 

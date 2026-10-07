@@ -167,8 +167,16 @@ def latency_table(latency: pd.DataFrame) -> pd.DataFrame:
         "reader": "Reading",
         "end_to_end": "End to end (HTTP request)",
     }
+    pipelines = {"bm25": "BM25", "dense": "Dense (bge-base)"}
+    names = [
+        pipelines[name.removesuffix("+rerank")]
+        + (" + rerank (bge-v2-m3)" if name.endswith("+rerank") else "")
+        + (" (served)" if served else "")
+        for name, served in zip(latency["pipeline"], latency["served"], strict=True)
+    ]
     return pd.DataFrame(
         {
+            "Pipeline": names,
             "Stage": latency["stage"].map(stages),
             "p50 ms": latency["p50_ms"].map("{:.1f}".format),
             "p95 ms": latency["p95_ms"].map("{:.1f}".format),

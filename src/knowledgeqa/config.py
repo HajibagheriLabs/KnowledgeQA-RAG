@@ -259,9 +259,18 @@ class EndToEndConfig:
             raise ValueError("e2e.threshold_points must be >= 2")
 
 
+def check_served_pipeline(name: str) -> None:
+    if name.removesuffix("+rerank") not in SERVE_FIRST_STAGES:
+        raise ValueError(
+            f"a served pipeline is one of {SERVE_FIRST_STAGES}, optionally followed "
+            f"by '+rerank'; got {name!r}"
+        )
+
+
 @dataclass(frozen=True)
 class ServeConfig:
     pipeline: str
+    benchmark_pipelines: tuple[str, ...]
     warmup_queries: int
     benchmark_queries: int
 
@@ -274,11 +283,8 @@ class ServeConfig:
         return self.pipeline.endswith("+rerank")
 
     def __post_init__(self) -> None:
-        if self.first_stage not in SERVE_FIRST_STAGES:
-            raise ValueError(
-                f"serve.pipeline must be one of {SERVE_FIRST_STAGES}, optionally "
-                f"followed by '+rerank'; got {self.pipeline!r}"
-            )
+        for name in (self.pipeline, *self.benchmark_pipelines):
+            check_served_pipeline(name)
         if self.warmup_queries < 0 or self.benchmark_queries < 1:
             raise ValueError("serve.warmup_queries >= 0 and benchmark_queries >= 1")
 
