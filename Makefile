@@ -1,7 +1,7 @@
 PYTHON := .venv/bin/python
 CONFIG ?= configs/default.yaml
 
-.PHONY: setup test lint format data stats train eval report
+.PHONY: setup test lint format data stats train eval study report
 
 setup:
 	uv venv --allow-existing --python 3.11 .venv
@@ -28,7 +28,10 @@ train:
 	@echo "nothing to train yet: no implemented stage has learned parameters"
 
 eval:
-	$(PYTHON) scripts/run_bm25.py --config $(CONFIG)
+	$(PYTHON) scripts/run_retrieval.py --config $(CONFIG)
+
+study:
+	$(PYTHON) scripts/index_study.py --config $(CONFIG)
 
 report:
 	$(PYTHON) scripts/make_report.py --config $(CONFIG)
