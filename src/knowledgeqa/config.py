@@ -134,12 +134,59 @@ class ChunkingSection:
 
 
 @dataclass(frozen=True)
+class BM25Config:
+    k1: float
+    b: float
+    stemmer: str
+
+    def __post_init__(self) -> None:
+        if self.k1 <= 0:
+            raise ValueError("bm25.k1 must be > 0")
+        if not 0 <= self.b <= 1:
+            raise ValueError("bm25.b must lie in [0, 1]")
+
+
+@dataclass(frozen=True)
+class RetrievalConfig:
+    candidate_chunks: int
+    query_batch_size: int
+    latency_warmup: int
+
+    def __post_init__(self) -> None:
+        if (
+            self.candidate_chunks < 1
+            or self.query_batch_size < 1
+            or self.latency_warmup < 0
+        ):
+            raise ValueError(
+                "retrieval: candidate_chunks, query_batch_size >= 1 and latency_warmup >= 0"
+            )
+
+
+@dataclass(frozen=True)
+class EvaluationConfig:
+    ndcg_k: int
+    recall_k: int
+    mrr_k: int
+
+    def __post_init__(self) -> None:
+        if min(self.ndcg_k, self.recall_k, self.mrr_k) < 1:
+            raise ValueError("evaluation cut-offs must be >= 1")
+
+
+@dataclass(frozen=True)
+class TrackingConfig:
+    experiment: str
+
+
+@dataclass(frozen=True)
 class Paths:
     raw: Path
     models: Path
     cache: Path
     reports: Path
     runs: Path
+    mlruns: Path
 
     def model_dir(self, source: HubSource) -> Path:
         return self.models / source.repo
@@ -153,10 +200,18 @@ class Config:
     paths: Paths
     data: DataConfig
     chunking: ChunkingSection
+    bm25: BM25Config
+    retrieval: RetrievalConfig
+    evaluation: EvaluationConfig
+    tracking: TrackingConfig
 
     def __post_init__(self) -> None:
         if self.seed < 0:
             raise ValueError("seed must be >= 0")
+        if self.retrieval.candidate_chunks < self.evaluation.recall_k:
+            raise ValueError(
+                "retrieval.candidate_chunks must be >= evaluation.recall_k"
+            )
         if self.device not in DEVICES:
             raise ValueError(f"device must be one of {DEVICES}, got {self.device!r}")
         if self.cpu_threads < 1:

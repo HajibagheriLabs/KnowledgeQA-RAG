@@ -8,6 +8,7 @@ paths:
   cache: data/cache
   reports: reports
   runs: runs
+  mlruns: mlruns
 
 data:
   disk_headroom_gb: 2.0
@@ -67,3 +68,23 @@ chunking:
     chunk_sizes: [128, 256, 512]
     overlap_fractions: [0.0, 0.25]
     include_unchunked: true
+
+bm25:
+  # anserini's defaults, which the published pyserini beir baselines use; not tuned here
+  k1: 0.9
+  b: 0.4
+  stemmer: porter
+
+retrieval:
+  # enough chunks that every query's top documents are exact after max-pooling
+  candidate_chunks: 1000
+  query_batch_size: 64
+  latency_warmup: 10
+
+evaluation:
+  ndcg_k: 10
+  recall_k: 100
+  mrr_k: 10
+
+tracking:
+  experiment: knowledgeqa
