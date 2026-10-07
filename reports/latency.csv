@@ -1,0 +1,8 @@
+pipeline,served,stage,p50_ms,p95_ms,mean_ms,queries,warmup_discarded,paragraphs,reranked_paragraphs,passages_read,abstained,device,gpu,cpu,cpu_threads
+bm25,True,retrieval,1.47,3.24,1.64,300,20,20233,0,5,171,cuda,NVIDIA GeForce RTX 3090,Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz,2
+bm25,True,reader,20.93,34.55,23.42,300,20,20233,0,5,171,cuda,NVIDIA GeForce RTX 3090,Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz,2
+bm25,True,end_to_end,24.73,38.58,27.36,300,20,20233,0,5,171,cuda,NVIDIA GeForce RTX 3090,Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz,2
+bm25+rerank,False,retrieval,1.57,3.39,1.76,300,20,20233,20,5,183,cuda,NVIDIA GeForce RTX 3090,Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz,2
+bm25+rerank,False,rerank,131.84,158.27,129.87,300,20,20233,20,5,183,cuda,NVIDIA GeForce RTX 3090,Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz,2
+bm25+rerank,False,reader,22.77,37.34,25.38,300,20,20233,20,5,183,cuda,NVIDIA GeForce RTX 3090,Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz,2
+bm25+rerank,False,end_to_end,160.27,186.49,159.08,300,20,20233,20,5,183,cuda,NVIDIA GeForce RTX 3090,Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz,2
