@@ -9,3 +9,15 @@ mlruns/
 *.onnx
 __pycache__/
 .venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+*.ckpt
+*.safetensors
+*.bin
+*.npy
+*.npz
+.env
