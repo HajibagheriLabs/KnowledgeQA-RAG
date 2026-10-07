@@ -7,7 +7,12 @@ import pandas as pd
 from knowledgeqa.config import load_config
 
 CORPORA = {"scifact": "SciFact", "nfcorpus": "NFCorpus", "fiqa": "FiQA"}
-RETRIEVERS = {"bm25": "BM25", "dense": "Dense (bge-base)", "hybrid": "Hybrid (RRF)"}
+RETRIEVERS = {
+    "bm25": "BM25",
+    "dense": "Dense (bge-base)",
+    "hybrid": "Hybrid (RRF)",
+    "dense+rerank": "Dense + rerank (bge-v2-m3)",
+}
 
 
 def chunking_label(name: str) -> str:
@@ -75,6 +80,78 @@ def index_table(study: pd.DataFrame, ndcg: str) -> pd.DataFrame:
     )
 
 
+def rerank_table(rerank: pd.DataFrame, ndcg: str, mrr: str) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Corpus": rerank["corpus"].map(CORPORA),
+            "Pairs per query": rerank["pairs_per_query"].map("{:.0f}".format),
+            "nDCG@10 before": rerank[f"first_stage_{ndcg}"].map("{:.3f}".format),
+            "nDCG@10 after": rerank[ndcg].map("{:.3f}".format),
+            "Change": (rerank[ndcg] - rerank[f"first_stage_{ndcg}"]).map(
+                "{:+.3f}".format
+            ),
+            "MRR@10 before": rerank[f"first_stage_{mrr}"].map("{:.3f}".format),
+            "MRR@10 after": rerank[mrr].map("{:.3f}".format),
+            "Retrieval p50 / p95 ms": rerank["first_stage_latency_p50_ms"].map(
+                "{:.0f}".format
+            )
+            + " / "
+            + rerank["first_stage_latency_p95_ms"].map("{:.0f}".format),
+            "Rerank p50 / p95 ms": rerank["rerank_latency_p50_ms"].map("{:.0f}".format)
+            + " / "
+            + rerank["rerank_latency_p95_ms"].map("{:.0f}".format),
+            "End to end p50 / p95 ms": rerank["latency_p50_ms"].map("{:.0f}".format)
+            + " / "
+            + rerank["latency_p95_ms"].map("{:.0f}".format),
+        }
+    )
+
+
+def ablation_table(ablations: pd.DataFrame, ndcg: str) -> pd.DataFrame:
+    columns = {("scifact", "tune"): "SciFact train (tuning)"}
+    columns |= {(c, "test"): f"{label} test" for c, label in CORPORA.items()}
+    table = ablations.pivot_table(
+        index="chunking", columns=["corpus", "split"], values=ndcg, sort=False
+    )
+    flags = ablations.drop_duplicates("chunking").set_index("chunking")
+    names = [
+        chunking_label(c)
+        + (" (selected)" if flags.loc[c, "selected"] else "")
+        + (" (default)" if flags.loc[c, "default"] else "")
+        for c in table.index
+    ]
+    out = pd.DataFrame({"Chunking": names})
+    for key, label in columns.items():
+        out[label] = table[key].map("{:.3f}".format).to_list()
+    return out
+
+
+def e2e_table(e2e: pd.DataFrame, recall: str) -> pd.DataFrame:
+    def pair(prefix: str) -> pd.Series:
+        return (
+            e2e[f"{prefix}_p50_ms"].map("{:.0f}".format)
+            + " / "
+            + e2e[f"{prefix}_p95_ms"].map("{:.0f}".format)
+        )
+
+    labels = {"oracle": "Oracle passage", "bm25": "BM25", "dense": "Dense (bge-base)"}
+    return pd.DataFrame(
+        {
+            "Retrieval": e2e["row"].map(labels),
+            "Passages read": e2e["passages_read"],
+            "Gold passage retrieved": e2e[recall].map(
+                lambda v: "-" if pd.isna(v) else f"{v:.3f}"
+            ),
+            "Answerable EM": e2e["answerable_em"].map("{:.3f}".format),
+            "Answerable F1": e2e["answerable_f1"].map("{:.3f}".format),
+            "Abstention accuracy": e2e["abstention_accuracy"].map("{:.3f}".format),
+            "Retrieval p50 / p95 ms": pair("retrieval"),
+            "Reader p50 / p95 ms": pair("reader"),
+            "End to end p50 / p95 ms": pair("end_to_end"),
+        }
+    )
+
+
 def fill(readme: str, name: str, table: pd.DataFrame) -> str:
     """Replace the block between <!-- table:name --> markers with a fresh table."""
     pattern = re.compile(
@@ -122,6 +199,19 @@ def main() -> None:
     study = reports / "index_study.csv"
     if study.is_file():
         readme = fill(readme, "index", index_table(pd.read_csv(study), metrics[0]))
+    rerank = reports / "retrieval_rerank.csv"
+    if rerank.is_file():
+        frame = pd.read_csv(rerank)
+        readme = fill(readme, "rerank", rerank_table(frame, metrics[0], metrics[2]))
+    ablations = reports / "ablations.csv"
+    if ablations.is_file():
+        readme = fill(
+            readme, "ablation", ablation_table(pd.read_csv(ablations), metrics[0])
+        )
+    e2e = reports / "e2e_results.csv"
+    if e2e.is_file():
+        recall = f"retrieval_recall_at_{config.e2e.top_k}"
+        readme = fill(readme, "e2e", e2e_table(pd.read_csv(e2e), recall))
     args.readme.write_text(readme)
     print(
         f"wrote {reports / 'results.csv'} from {len(parts)} file(s) and refreshed {args.readme}"
