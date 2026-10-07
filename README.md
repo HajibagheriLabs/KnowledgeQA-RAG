@@ -30,6 +30,7 @@ chunk; "whole documents" indexes each document as a single unit, the setting pub
 | Dense (bge-base) | fixed 256 / 64 | 0.744 | 0.376 | 0.407 |
 | Hybrid (RRF) | whole documents | 0.740 | 0.371 | 0.370 |
 | Hybrid (RRF) | fixed 256 / 64 | 0.741 | 0.374 | 0.356 |
+| Dense + rerank (bge-v2-m3) | fixed 256 / 64 | 0.739 | 0.347 | 0.431 |
 <!-- /table:summary -->
 
 Published references for the whole-document rows, from the
@@ -69,6 +70,9 @@ Full tables: [`reports/results.csv`](reports/results.csv).
 | Hybrid (RRF) | SciFact | 5,183 | 9,245 | 0.741 | 0.977 | 0.703 | 19.1 | 23.1 |
 | Hybrid (RRF) | NFCorpus | 3,633 | 6,944 | 0.374 | 0.344 | 0.569 | 18.2 | 24.6 |
 | Hybrid (RRF) | FiQA | 57,638 | 74,688 | 0.356 | 0.709 | 0.430 | 20.2 | 27.7 |
+| Dense + rerank (bge-v2-m3) | SciFact | 5,183 | 9,245 | 0.739 | 0.966 | 0.712 | 948.8 | 1211.3 |
+| Dense + rerank (bge-v2-m3) | NFCorpus | 3,633 | 6,944 | 0.347 | 0.346 | 0.557 | 914.9 | 1004.7 |
+| Dense + rerank (bge-v2-m3) | FiQA | 57,638 | 74,688 | 0.431 | 0.739 | 0.517 | 710.7 | 856.0 |
 <!-- /table:retrieval -->
 
 <details>
@@ -89,6 +93,71 @@ Full tables: [`reports/results.csv`](reports/results.csv).
 <!-- /table:retrieval-whole -->
 
 </details>
+
+### Reranking: what the cross-encoder buys and costs
+
+bge-reranker-v2-m3 (568M parameters) re-scores every chunk of the dense retriever's top 100
+documents (`make eval`, [`reports/retrieval_rerank.csv`](reports/retrieval_rerank.csv)). The
+first stage and the reranker were both chosen on the tuning splits, never on test
+([`reports/selection.csv`](reports/selection.csv)); latency is measured on a fixed sample of 100
+queries per subset, each answered on its own.
+
+<!-- table:rerank -->
+| Corpus | Pairs per query | nDCG@10 before | nDCG@10 after | Change | MRR@10 before | MRR@10 after | Retrieval p50 / p95 ms | Rerank p50 / p95 ms | End to end p50 / p95 ms |
+|---|---|---|---|---|---|---|---|---|---|
+| SciFact | 197 | 0.744 | 0.739 | -0.005 | 0.709 | 0.712 | 15 / 29 | 923 / 1227 | 949 / 1211 |
+| NFCorpus | 208 | 0.376 | 0.347 | -0.030 | 0.567 | 0.557 | 15 / 28 | 900 / 985 | 915 / 1005 |
+| FiQA | 181 | 0.407 | 0.431 | +0.024 | 0.487 | 0.517 | 16 / 17 | 693 / 840 | 711 / 856 |
+<!-- /table:rerank -->
+
+- **Reranking is not a free win here.** It helps FiQA (+0.024 nDCG@10, +0.030 MRR@10) and hurts
+  NFCorpus (-0.030) and, slightly, SciFact (-0.005). The tuning splits predicted exactly this
+  pattern, and on them no reranker beat dense retrieval alone on average: bge-reranker-base lost
+  0.08 nDCG@10 and MS MARCO MiniLM-L6 0.03, so a strong bi-encoder leaves a cross-encoder little
+  room, especially on medical (NFCorpus) and scientific (SciFact) text far from its training data.
+- **It costs 43 to 60 times the first stage:** 0.7 to 0.9 s per query against 15 ms, because
+  every query sends roughly 200 (query, chunk) pairs through a 568M-parameter model. Even on FiQA,
+  where it helps, that is a poor trade for an interactive system unless the candidate list is cut
+  or the reranker distilled.
+
+### Chunking ablation: tuned on SciFact, transferred untouched
+
+Dense retrieval (the best pipeline on the tuning splits) over 13 chunkings: fixed windows and
+sentence-packed chunks of 128, 256 and 512 tokens with 0% and 25% overlap, plus whole documents
+(`make ablation`, [`reports/ablations.csv`](reports/ablations.csv)). **The configuration was chosen
+on SciFact's tuning split (train queries) alone; the NFCorpus and FiQA columns are untouched
+transfer**, never used for any choice.
+
+![nDCG@10 against chunk size for each strategy and overlap, per corpus](reports/ablations.png)
+
+<!-- table:ablation -->
+| Chunking | SciFact train (tuning) | SciFact test | NFCorpus test | FiQA test |
+|---|---|---|---|---|
+| whole documents | 0.771 | 0.742 | 0.374 | 0.406 |
+| fixed 128 / 0 | 0.772 | 0.749 | 0.381 | 0.389 |
+| fixed 128 / 32 | 0.765 | 0.755 | 0.377 | 0.390 |
+| fixed 256 / 0 | 0.769 | 0.743 | 0.377 | 0.401 |
+| fixed 256 / 64 (default) | 0.766 | 0.744 | 0.376 | 0.407 |
+| fixed 512 / 0 | 0.773 | 0.743 | 0.373 | 0.409 |
+| fixed 512 / 128 | 0.773 | 0.744 | 0.374 | 0.407 |
+| sentence 128 / 0 | 0.775 | 0.759 | 0.379 | 0.384 |
+| sentence 128 / 32 (selected) | 0.778 | 0.755 | 0.379 | 0.388 |
+| sentence 256 / 0 | 0.773 | 0.746 | 0.375 | 0.407 |
+| sentence 256 / 64 | 0.776 | 0.747 | 0.377 | 0.412 |
+| sentence 512 / 0 | 0.771 | 0.745 | 0.374 | 0.408 |
+| sentence 512 / 128 | 0.771 | 0.745 | 0.374 | 0.406 |
+<!-- /table:ablation -->
+
+- **The tuned choice transfers to SciFact's test split and to NFCorpus, but not to FiQA.**
+  Sentence chunks of 128 tokens with 32 overlap win on the tuning split and add 0.011 nDCG@10 on
+  SciFact test and 0.002 on NFCorpus over the a-priori default, but cost 0.019 on FiQA, where the
+  best setting is the opposite, larger sentence chunks (256 / 64, 0.412). Abstracts reward small,
+  focused chunks; forum answers need their context. One tuned chunking is not a property of
+  retrieval in general.
+- **Sentence boundaries help more often than not:** at equal size and overlap, sentence packing
+  matches or beats fixed windows in 12 of 18 test cells, most clearly on SciFact at 128 tokens.
+- **The effect is real but bounded:** chunking moves nDCG@10 by 0.007 to 0.028 within a corpus,
+  smaller than the gap between BM25 and dense retrieval but comparable to the reranker's effect.
 
 ### Index study: exact vs approximate search
 
@@ -122,6 +191,43 @@ nDCG@10 shows what that loss costs downstream. The retrieval rows above use exac
 - **IVF-PQ trades accuracy for memory:** 20x smaller (11.7 MB vs 229 MB), but product quantisation
   caps recall near 0.71 no matter how many lists are probed, costing 0.036 nDCG@10. It needs a
   re-scoring step with full vectors before it is usable here.
+
+### End to end: retrieve, read, abstain (SQuAD 2.0)
+
+The reader (`deepset/roberta-base-squad2`) answers from the top 5 paragraphs of a corpus of all
+20,233 SQuAD 2.0 paragraphs, the 1,204 dev paragraphs among 19,029 train distractors, or from the
+gold paragraph alone (oracle). The abstention threshold is tuned per row on 10 dev articles held
+out whole; every number below is on the other 25 articles: 4,260 answerable and 4,189 unanswerable
+questions (`make eval`, [`reports/e2e_results.csv`](reports/e2e_results.csv)). Answerable EM and F1
+and abstention accuracy are separate columns on purpose: a blended score hides the trade-off.
+
+<!-- table:e2e -->
+| Retrieval | Passages read | Gold passage retrieved | Answerable EM | Answerable F1 | Abstention accuracy | Retrieval p50 / p95 ms | Reader p50 / p95 ms | End to end p50 / p95 ms |
+|---|---|---|---|---|---|---|---|---|
+| Oracle passage | 1 | - | 0.741 | 0.790 | 0.874 | 0 / 0 | 17 / 34 | 17 / 34 |
+| BM25 | 5 | 0.866 | 0.585 | 0.625 | 0.885 | 1 / 4 | 23 / 38 | 24 / 41 |
+| Dense (bge-base) | 5 | 0.773 | 0.516 | 0.553 | 0.901 | 17 / 21 | 22 / 27 | 39 / 47 |
+<!-- /table:e2e -->
+
+![F1 on answerable questions against abstention accuracy as the threshold varies](reports/e2e_curve.png)
+
+- **The oracle gap is the headline number: 0.790 F1 with the gold paragraph, 0.625 with the best
+  retriever, so retrieval costs 0.165 F1 on answerable questions.** 11.9% of answerable questions
+  (506 of 4,260) never get their gold paragraph into the top 5 and score 0.03 F1; on the rest the
+  reader reaches 0.705, below the oracle's 0.790 because it must pick among five passages and its
+  tuned threshold is stricter.
+- **BM25 beats dense retrieval on SQuAD** (gold paragraph in the top 5 for 86.6% vs 77.3% of
+  questions, 0.625 vs 0.553 F1), the reverse of BEIR. SQuAD questions were written while reading the
+  paragraph and reuse its words, which favours exact term matching; the dense model's advantage on
+  BEIR does not carry over.
+- **Abstention is a dial, not a constant.** Along the curve the oracle reader trades answerable F1
+  for abstention accuracy smoothly; the tuned thresholds sit near 0.87 to 0.90 abstention accuracy,
+  and an application that cares more about wrong answers than missed ones can move along it.
+- **The reader is validated in isolation:** with gold paragraphs on the full dev set and threshold 0
+  it scores 79.81 EM / 82.80 F1 on the official blended metric, against 79.93 / 82.95 on its model card
+  ([`reports/reader_check.csv`](reports/reader_check.csv)).
+- Latency is per question on one RTX 3090, over a fixed sample of 500: reading 5 paragraphs takes
+  22 to 23 ms at p50, so retrieval plus reading stays under 50 ms at p95.
 
 ### Corpora
 

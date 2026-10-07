@@ -179,3 +179,67 @@ cache stores the original encode time, so reported index times stay honest on ca
 
 `make report` renders every results table from the CSVs in `reports/` into the README between
 marker comments, so a number in the README cannot drift from the run that produced it.
+
+## First stage and reranker are chosen on the tuning splits
+
+The "best first-stage retriever" and the reranker were picked by `scripts/select_models.py` on
+SciFact train, NFCorpus dev and FiQA dev only, by mean nDCG@10, from candidates fixed in advance
+(`reports/selection.csv`). Dense retrieval wins the first stage (0.515 vs hybrid 0.489 and BM25
+0.413). Of three cross-encoders spanning model size, MS MARCO MiniLM-L6 (22M), bge-reranker-base
+(278M) and bge-reranker-v2-m3 (568M), none beats dense retrieval alone on average: v2-m3 comes
+closest (0.511) and is the one reported, helping FiQA but hurting SciFact and NFCorpus. Choosing
+on the test splits would have been easier and would have overstated every reranking result.
+
+## Cross-encoder and reader logits are kept in fp32
+
+Running the models in fp16 doubles throughput, but fp16 logits are coarse: the first reranking run
+produced only 3,864 distinct scores for 59,026 candidates, so ranks were decided by document-id
+tie-breaking. The classification head now runs in fp32 on the fp16 encoder output (57,756 distinct
+scores, same speed), and the reader casts start and end logits to fp32 before any span arithmetic.
+On this data the tie fix happened not to change nDCG@10, but the ranking is no longer an artefact.
+
+## Reader: an off-the-shelf SQuAD 2.0 model, validated before use
+
+`deepset/roberta-base-squad2` is read with its training window (384 tokens, stride 128). Spans are
+searched exhaustively within each window (up to 30 tokens) on the GPU, and each question keeps the
+window whose best span beats its own no-answer score by the largest margin; the reader abstains
+when that margin is below a threshold. On the full dev set with gold passages and threshold 0 it
+reproduces the model card within 0.2 points on the official blended score
+(`reports/reader_check.csv`), which validates the reading and scoring code before any retrieval is
+involved.
+
+## SQuAD end-to-end setup
+
+The corpus is every distinct paragraph of SQuAD 2.0 train and dev (20,233), so the 1,204 dev
+paragraphs sit among 19,029 distractors from other articles; paragraphs are indexed whole, since
+they are already passage-sized and the gold answer offsets are defined on them. The abstention
+threshold is the only fitted parameter. It is tuned per pipeline on 10 dev articles held out as a
+whole, never on the evaluation articles: unanswerable questions are written against a specific
+paragraph, so splitting by question would leak paragraph-level cues between tuning and evaluation.
+The threshold maximises the official overall F1 on the tuning articles; the results report answerable
+EM and F1 and abstention accuracy separately, and the full curve shows every other operating point.
+The oracle row reads the gold paragraph, so the gap between it and a retrieval row is error caused by
+retrieval rather than by the reader.
+
+## The ablation's winner does not become the default
+
+The chunking selected on SciFact's tuning split (sentence-packed, 128 tokens, 32 overlap) improves
+SciFact test by 0.011 nDCG@10 and NFCorpus by 0.002, but loses 0.019 on FiQA. Adopting it globally
+would trade one corpus against another on evidence from a single domain, so the a-priori default
+(fixed 256 / 64) stays the pipeline's chunking and every other table uses it. A deployment on one
+corpus should tune chunking on that corpus's own held-out queries; the ablation shows why.
+
+## Reranking is reported although it does not win on average
+
+The reranked pipeline is in the results with both sides of the trade: on
+test it moves nDCG@10 by -0.005, -0.030 and +0.024 (SciFact, NFCorpus, FiQA) for 0.7 to 0.9 s of
+added latency per query. Candidates are all chunks of the top 100 documents, scored in a single
+fp16 batch per query; a smaller candidate list or a distilled reranker would cut the cost, but
+neither was tuned, to keep the comparison with the selection run exact.
+
+## BM25 is the better SQuAD retriever
+
+On the SQuAD corpus BM25 puts the gold paragraph in the top 5 for 86.6% of evaluation questions
+and dense retrieval for 77.3%, the reverse of the BEIR results. This is a known property of SQuAD
+(questions were written against the paragraph and share its vocabulary), so it is reported as is
+rather than hidden behind a BEIR-only "best retriever"; the end-to-end table keeps both rows.
