@@ -163,6 +163,17 @@ def main() -> None:
             answers |= dict(zip([q.qid for q in group], found, strict=True))
         tune_golds = {q.qid: q.answers for q in tune}
         golds = {q.qid: q.answers for q in evaluation}
+        if row == "oracle":
+            # the published reader numbers are blended over the full dev set at threshold 0
+            check = score_answers(answers, tune_golds | golds, 0.0)
+            check["blended_em"] = blended(check, "answerable_em")
+            check["blended_f1"] = blended(check, "answerable_f1")
+            check_frame = pd.DataFrame(
+                [{"split": e2e.eval_split, "threshold": 0.0} | check]
+            )
+            check_frame.round(4).to_csv(
+                config.paths.reports / "reader_check.csv", index=False
+            )
         threshold = tune_threshold(answers, tune_golds, e2e.threshold_points)
         metrics = score_answers(answers, golds, threshold)
         if row != "oracle":
