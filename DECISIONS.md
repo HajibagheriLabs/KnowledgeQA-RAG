@@ -34,3 +34,47 @@ evaluation split.
 Python 3.11 managed by uv, dependencies pinned to minor versions in `pyproject.toml`. PyTorch is
 installed from the CUDA 12.6 wheel index instead of PyPI's CUDA 13 default: the same features, and
 it runs on a wider range of installed drivers.
+
+## Chunk lengths are WordPiece tokens
+
+Chunk sizes and overlaps are counted with the bert-base-uncased WordPiece tokenizer (pinned
+commit), the vocabulary shared by the BERT-family encoders used downstream, so a 256-token chunk
+is 256 tokens to the encoder rather than an estimate from whitespace words. The tokenizer's
+character offsets map every chunk back to an exact span of its document. The budget counts body
+tokens; the title is prepended to every chunk (BEIR's `title + " " + text` convention), adding up
+to ~90 tokens on SciFact.
+
+## Two chunkers
+
+`fixed` slides a window of exactly `chunk_size` tokens whose neighbours share exactly `overlap`
+tokens: the textbook baseline, which cuts mid-sentence and occasionally mid-word. `sentence` packs
+whole sentences up to the budget and repeats trailing sentences worth at most `overlap` tokens in
+the next chunk; a single sentence longer than the budget falls back to fixed windows. Sentences
+are split by a regular expression with an abbreviation guard (`et al.`, `Fig.`, initials), which is
+enough for abstracts and forum posts and adds no model or dependency.
+
+## Chunk-to-document mapping
+
+Every chunk stores its parent's `doc_id` and position explicitly; nothing is ever parsed back out
+of a chunk id, so ids like `MED-10`, `0123` or ids containing the `#` separator are safe (the
+test exercises exactly these). Every document yields at least one chunk, empty ones included, so
+no judged document can silently fall out of the evaluation.
+
+## Empty FiQA documents are kept
+
+FiQA's corpus has 38 documents with neither title nor text, and the official qrels judge 38 rows
+on them relevant (35 train, 2 dev, 1 test). They stay in, so the corpus (57,638 documents) and the
+qrels match the official release and published numbers remain comparable. No content-based
+retriever can find them, which caps attainable recall for one FiQA test query; retrievers must
+never score an empty text.
+
+## Default chunking chosen a priori
+
+`fixed`, 256 tokens, 64 overlap (25%), chosen before any retrieval result was seen. The ablation
+grid (fixed and sentence, 128/256/512 tokens, 0% and 25% overlap, plus whole documents) is
+evaluated later, and any choice among its configurations is made on SciFact's tuning split.
+
+## Tokenisation is cached by content
+
+Tokenising FiQA takes ~17 s per run. Offsets are memoised in `data/cache` under a SHA-256 of the
+exact document texts and the serialised tokenizer, so a stale cache can never be served.

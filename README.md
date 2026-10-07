@@ -20,6 +20,21 @@ reported as p50/p95 per stage, with the corpus size stated.
 Every number in this README is produced by a script in this repository; anything not yet run is
 `TBD`.
 
+### Corpora
+
+Lengths are in bert-base-uncased WordPiece tokens (title + text). Chunks are for the default
+configuration, fixed 256-token windows with 64 tokens of overlap; `make stats` writes the full
+grid to [`reports/corpus_stats.csv`](reports/corpus_stats.csv).
+
+| Corpus   | Documents | Mean tokens | Median | p99 | Max   | Chunks | Chunks per doc |
+|----------|-----------|-------------|--------|-----|-------|--------|----------------|
+| SciFact  | 5,183     | 335         | 314    | 759 | 1,937 | 9,245  | 1.78           |
+| NFCorpus | 3,633     | 355         | 355    | 689 | 2,375 | 6,944  | 1.91           |
+| FiQA     | 57,638    | 175         | 118    | 836 | 3,597 | 74,688 | 1.30           |
+
+FiQA includes 38 empty documents that the official qrels still judge relevant; they are kept so the
+corpus and qrels match the official release (see DECISIONS.md).
+
 ## Setup
 
 Requirements: Linux, Python 3.11 via [uv](https://docs.astral.sh/uv/), and an NVIDIA GPU with a
@@ -35,6 +50,7 @@ make data    # BEIR SciFact, NFCorpus, FiQA and SQuAD 2.0 into data/raw at pinne
 ```bash
 make lint
 make test
+make stats   # corpus sizes, token lengths and chunk counts per chunking configuration
 ```
 
 Evaluation and reporting targets are added as each stage lands.
