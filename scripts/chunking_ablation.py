@@ -67,7 +67,7 @@ def plot(frame: pd.DataFrame, ndcg: str, path) -> None:
     fig.legend(handles, labels, loc="lower center", ncol=4, frameon=False, fontsize=8)
     fig.suptitle(
         "Chunking ablation: chosen on SciFact's tuning split (ringed), others untouched;"
-        " dotted line = whole documents",
+        " dotted line = whole documents; each panel has its own y-scale",
         fontsize=9,
         x=0.01,
         ha="left",
