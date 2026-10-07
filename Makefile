@@ -28,7 +28,7 @@ train:
 	@echo "nothing to train yet: no implemented stage has learned parameters"
 
 eval:
-	@echo "eval: no retriever implemented yet" >&2; exit 1
+	$(PYTHON) scripts/run_bm25.py --config $(CONFIG)
 
 report:
-	@echo "report: no results to collect yet" >&2; exit 1
+	$(PYTHON) scripts/make_report.py --config $(CONFIG)
