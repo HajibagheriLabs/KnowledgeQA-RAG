@@ -9,6 +9,7 @@ import yaml
 _COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 DEVICES = ("cpu", "cuda")
 STRATEGIES = ("none", "fixed", "sentence")
+FIRST_STAGES = ("bm25", "dense", "hybrid")
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,8 @@ class ChunkingAblation:
     chunk_sizes: tuple[int, ...]
     overlap_fractions: tuple[float, ...]
     include_unchunked: bool
+    tune_corpus: str
+    rerank: bool
 
     def __post_init__(self) -> None:
         if "none" in self.strategies:
@@ -197,6 +200,62 @@ class HybridConfig:
 
 
 @dataclass(frozen=True)
+class RerankConfig:
+    candidates: dict[str, HubSource]
+    model: str
+    first_stage: str
+    top_k: int
+    max_length: int
+    batch_size: int
+    fp16: bool
+    latency_queries: int
+
+    def __post_init__(self) -> None:
+        if self.first_stage not in FIRST_STAGES:
+            raise ValueError(f"rerank.first_stage must be one of {FIRST_STAGES}")
+        if self.model not in self.candidates:
+            raise ValueError(f"rerank.model must be one of {sorted(self.candidates)}")
+        if min(self.top_k, self.max_length, self.batch_size) < 1:
+            raise ValueError("rerank.top_k, max_length and batch_size must be >= 1")
+
+
+@dataclass(frozen=True)
+class ReaderConfig:
+    model: HubSource
+    max_length: int
+    stride: int
+    max_answer_tokens: int
+    batch_size: int
+    fp16: bool
+
+    def __post_init__(self) -> None:
+        if not 0 < self.stride < self.max_length:
+            raise ValueError("reader.stride must lie in (0, max_length)")
+        if min(self.max_answer_tokens, self.batch_size) < 1:
+            raise ValueError("reader.max_answer_tokens and batch_size must be >= 1")
+
+
+@dataclass(frozen=True)
+class EndToEndConfig:
+    corpus_splits: tuple[str, ...]
+    eval_split: str
+    tune_articles: int
+    top_k: int
+    threshold_points: int
+    latency_questions: int
+
+    def __post_init__(self) -> None:
+        if self.eval_split not in self.corpus_splits:
+            raise ValueError("e2e.eval_split must be one of e2e.corpus_splits")
+        if min(self.tune_articles, self.top_k, self.latency_questions) < 1:
+            raise ValueError(
+                "e2e.tune_articles, top_k and latency_questions must be >= 1"
+            )
+        if self.threshold_points < 2:
+            raise ValueError("e2e.threshold_points must be >= 2")
+
+
+@dataclass(frozen=True)
 class IndexStudyConfig:
     corpus: str
     hnsw_m: int
@@ -238,6 +297,9 @@ class Config:
     retrieval: RetrievalConfig
     dense: DenseConfig
     hybrid: HybridConfig
+    rerank: RerankConfig
+    reader: ReaderConfig
+    e2e: EndToEndConfig
     index_study: IndexStudyConfig
     evaluation: EvaluationConfig
     tracking: TrackingConfig
@@ -245,6 +307,8 @@ class Config:
     def __post_init__(self) -> None:
         if self.seed < 0:
             raise ValueError("seed must be >= 0")
+        if self.chunking.ablation.tune_corpus not in self.data.beir:
+            raise ValueError("chunking.ablation.tune_corpus is not a dataset")
         if self.index_study.corpus not in self.data.beir:
             raise ValueError(
                 f"index_study.corpus {self.index_study.corpus!r} is not a dataset"

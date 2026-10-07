@@ -101,7 +101,8 @@ def main() -> None:
             api, dataset.qrels, "dataset", raw / "beir" / name / "qrels"
         )
     remote += list_remote(api, config.data.squad, "dataset", raw)
-    for model in (config.chunking.tokenizer, config.dense.model):
+    models = [config.chunking.tokenizer, config.dense.model, config.reader.model]
+    for model in models + list(config.rerank.candidates.values()):
         remote += list_remote(api, model, "model", config.paths.model_dir(model))
 
     pending = [item for item in remote if not is_intact(item)]

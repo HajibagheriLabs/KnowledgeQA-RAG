@@ -68,6 +68,10 @@ chunking:
     chunk_sizes: [128, 256, 512]
     overlap_fractions: [0.0, 0.25]
     include_unchunked: true
+    # chosen on this corpus's tuning split; the other corpora are untouched transfer
+    tune_corpus: scifact
+    # no reranker beats dense retrieval alone on the tuning splits (reports/selection.csv)
+    rerank: false
 
 bm25:
   # anserini's defaults, which the published pyserini beir baselines use; not tuned here
@@ -105,6 +109,79 @@ dense:
 hybrid:
   # the constant from the original reciprocal rank fusion paper, not tuned
   rrf_k: 60
+
+rerank:
+  # fixed before any reranking result was seen: a small, a base and a large cross-encoder
+  candidates:
+    minilm-l6:
+      repo: cross-encoder/ms-marco-MiniLM-L6-v2
+      revision: 233902d25c440f23af6f7d6e94d2946bac0bee0a
+      files:
+        - config.json
+        - model.safetensors
+        - special_tokens_map.json
+        - tokenizer.json
+        - tokenizer_config.json
+        - vocab.txt
+    bge-base:
+      repo: BAAI/bge-reranker-base
+      revision: 2cfc18c9415c912f9d8155881c133215df768a70
+      files:
+        - config.json
+        - model.safetensors
+        - sentencepiece.bpe.model
+        - special_tokens_map.json
+        - tokenizer.json
+        - tokenizer_config.json
+    bge-v2-m3:
+      repo: BAAI/bge-reranker-v2-m3
+      revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+      files:
+        - config.json
+        - model.safetensors
+        - sentencepiece.bpe.model
+        - special_tokens_map.json
+        - tokenizer.json
+        - tokenizer_config.json
+  # best reranker by mean tuning-split nDCG@10 (reports/selection.csv), though none beats dense alone
+  model: bge-v2-m3
+  # chosen on the tuning splits by scripts/select_models.py, see reports/selection.csv
+  first_stage: dense
+  # documents handed to the cross-encoder; all their chunks are scored
+  top_k: 100
+  max_length: 512
+  batch_size: 64
+  fp16: true
+  # cross-encoding a hundred documents takes about a second, so latency uses a fixed sample
+  latency_queries: 100
+
+reader:
+  model:
+    repo: deepset/roberta-base-squad2
+    revision: adc3b06f79f797d1c575d5479d6f5efe54a9e3b4
+    files:
+      - config.json
+      - merges.txt
+      - model.safetensors
+      - special_tokens_map.json
+      - tokenizer_config.json
+      - vocab.json
+  # the window and stride the model was fine-tuned with
+  max_length: 384
+  stride: 128
+  max_answer_tokens: 30
+  batch_size: 64
+  fp16: true
+
+e2e:
+  # train paragraphs are distractors: no article or paragraph is shared with the dev set
+  corpus_splits: [train, validation]
+  eval_split: validation
+  # dev articles held out for the abstention threshold; the rest is evaluation
+  tune_articles: 10
+  top_k: 5
+  threshold_points: 101
+  latency_questions: 500
 
 index_study:
   corpus: fiqa
