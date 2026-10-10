@@ -55,9 +55,10 @@ Published references for the whole-document rows, from the
   Pyserini's nDCG@10 and Recall@100 on every subset, and whole-document dense retrieval is within
   0.002. That checks qrels handling, document-id mapping and the metrics end to end. The metric
   code also agrees with pytrec_eval to 1e-15 (`scripts/crosscheck_metrics.py`).
-- **BM25 does not win anywhere on BEIR.** bge-base beats it on all three subsets, by 0.06 nDCG@10
-  on SciFact and NFCorpus and by 0.17 on FiQA. Older or smaller encoders often lose to BM25 on
-  SciFact and NFCorpus; this one does not. On SQuAD the order reverses (see below).
+- **BM25 does not win anywhere on BEIR.** bge-base beats it on all three subsets, at the default
+  chunking by 0.06 nDCG@10 on SciFact and NFCorpus and by 0.18 on FiQA. Older or smaller encoders
+  often lose to BM25 on SciFact and NFCorpus; this one does not. On SQuAD the order reverses (see
+  below).
 - **Hybrid fusion does not pay off with this encoder.** RRF ties dense retrieval on SciFact and
   NFCorpus (within 0.003) and is clearly worse on FiQA (0.356 vs 0.407). RRF weights both rankings
   equally, and BM25 is too weak a partner on FiQA.

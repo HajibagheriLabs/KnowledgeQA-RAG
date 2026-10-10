@@ -245,12 +245,13 @@ neither was tuned, to keep the comparison with the selection run exact.
 
 ## Where BM25 beat dense retrieval, and what follows
 
-On BEIR it never did: bge-base beats BM25 on all three subsets, by 0.06 nDCG@10 on SciFact and
-NFCorpus and 0.17 on FiQA, although older encoders often lose to BM25 on the first two. On SQuAD it
-does, clearly: BM25 puts the gold paragraph in the top 5 for 86.6% of evaluation questions and dense
-retrieval for 77.3%, and answerable F1 follows (0.625 vs 0.553). SQuAD questions were written by
-annotators looking at the paragraph and reuse its words, which is exactly what exact term matching
-rewards; BEIR's queries were written independently of the documents.
+On BEIR it never did: bge-base beats BM25 on all three subsets, at the default chunking by 0.06
+nDCG@10 on SciFact and NFCorpus and 0.18 on FiQA, although older encoders often lose to BM25 on the
+first two. On SQuAD it does, clearly: BM25 puts the gold paragraph in the top 5 for 86.6% of
+evaluation questions and dense retrieval for 77.3%, and answerable F1 follows (0.625 vs 0.553).
+SQuAD questions were written by annotators looking at the paragraph and reuse its words, which is
+exactly what exact term matching rewards; BEIR's queries were written independently of the
+documents.
 
 The conclusion is that "the best retriever" is a property of a corpus and its queries, not of the
 retriever. The BEIR selection (dense) is therefore not carried over to SQuAD; the service retrieves
