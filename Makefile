@@ -25,7 +25,7 @@ stats:
 	$(PYTHON) scripts/inspect_corpus.py --config $(CONFIG)
 
 train:
-	@echo "nothing to train yet: no implemented stage has learned parameters"
+	@echo "nothing to train: every model is used as published; make eval fits the abstention threshold"
 
 select:
 	$(PYTHON) scripts/select_models.py --config $(CONFIG)
