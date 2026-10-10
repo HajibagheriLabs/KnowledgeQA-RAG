@@ -11,7 +11,7 @@ from knowledgeqa.evaluate import evaluate_run
 from knowledgeqa.ingest import load_corpus, load_queries, tune_qrels
 from knowledgeqa.pipeline import bm25_stage, dense_stage, hybrid_stage
 from knowledgeqa.rerank import candidate_pairs, chunks_by_doc, load_reranker, rerank_run
-from knowledgeqa.runtime import setup, start_run
+from knowledgeqa.runtime import log_result, setup, start_run, start_tracking
 
 
 def main() -> None:
@@ -23,6 +23,7 @@ def main() -> None:
     config = load_config(args.config)
     device = setup(config)
     run_dir = start_run(config, "selection")
+    start_tracking(config)
     evaluation, chunking = config.evaluation, config.chunking.default
     ndcg = f"ndcg_at_{evaluation.ndcg_k}"
     tokenizer, encoder = load_tokenizer(config), load_encoder(config, device)
@@ -53,15 +54,14 @@ def main() -> None:
                 evaluation.recall_k,
                 evaluation.mrr_k,
             )
-            rows.append(
-                {
-                    "corpus": name,
-                    "split": split,
-                    "first_stage": stage,
-                    "reranker": "none",
-                }
-                | metrics
-            )
+            params = {
+                "corpus": name,
+                "split": split,
+                "first_stage": stage,
+                "reranker": "none",
+            }
+            rows.append(params | metrics)
+            log_result(f"selection-{stage}-{name}", params, metrics, run_dir)
         first_stage_runs[name] = {stage: result.run for stage, result in stages.items()}
         corpora[name] = (queries, qrels, query_ids, chunks)
     del encoder
@@ -84,15 +84,15 @@ def main() -> None:
                 run, qrels, evaluation.ndcg_k, evaluation.recall_k, evaluation.mrr_k
             )
             split = config.data.beir[name].tune_split
-            rows.append(
-                {
-                    "corpus": name,
-                    "split": split,
-                    "first_stage": best_stage,
-                    "reranker": reranker_name,
-                }
-                | metrics
-            )
+            params = {
+                "corpus": name,
+                "split": split,
+                "first_stage": best_stage,
+                "reranker": reranker_name,
+            }
+            rows.append(params | metrics)
+            tag = f"{best_stage}+{reranker_name}"
+            log_result(f"selection-{tag}-{name}", params, metrics, run_dir)
             print(
                 f"{name:9s} {split:6s} {best_stage} + {reranker_name}: {ndcg}={metrics[ndcg]:.4f}"
             )
