@@ -243,18 +243,18 @@ The results are in [`reports/latency.csv`](reports/latency.csv).
 <!-- table:latency -->
 | Pipeline | Stage | p50 ms | p95 ms | Mean ms | Queries |
 |---|---|---|---|---|---|
-| BM25 (served) | Retrieval | 1.5 | 3.2 | 1.6 | 300 |
-| BM25 (served) | Reading | 20.9 | 34.5 | 23.4 | 300 |
-| BM25 (served) | End to end (HTTP request) | 24.7 | 38.6 | 27.4 | 300 |
-| BM25 + rerank (bge-v2-m3) | Retrieval | 1.6 | 3.4 | 1.8 | 300 |
-| BM25 + rerank (bge-v2-m3) | Reranking | 131.8 | 158.3 | 129.9 | 300 |
-| BM25 + rerank (bge-v2-m3) | Reading | 22.8 | 37.3 | 25.4 | 300 |
-| BM25 + rerank (bge-v2-m3) | End to end (HTTP request) | 160.3 | 186.5 | 159.1 | 300 |
+| BM25 (served) | Retrieval | 1.2 | 3.0 | 1.4 | 300 |
+| BM25 (served) | Reading | 18.7 | 32.0 | 20.7 | 300 |
+| BM25 (served) | End to end (HTTP request) | 22.0 | 36.6 | 24.2 | 300 |
+| BM25 + rerank (bge-v2-m3) | Retrieval | 1.3 | 1.9 | 1.4 | 300 |
+| BM25 + rerank (bge-v2-m3) | Reranking | 127.5 | 151.5 | 125.0 | 300 |
+| BM25 + rerank (bge-v2-m3) | Reading | 19.0 | 25.0 | 20.9 | 300 |
+| BM25 + rerank (bge-v2-m3) | End to end (HTTP request) | 150.8 | 175.7 | 149.0 | 300 |
 <!-- /table:latency -->
 
 Retrieval over 20k paragraphs takes under 2 ms at p50. The reader dominates the served pipeline.
-The reranker would add about 130 ms, five times the rest of the pipeline, for answers that are no
-better.
+The reranker would add about 130 ms, more than five times the rest of the pipeline, for answers
+that are no better.
 
 ### Corpora
 
