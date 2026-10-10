@@ -274,8 +274,9 @@ the corpus and qrels match the official release (see [DECISIONS.md](DECISIONS.md
 ## Reproducing from a clean clone
 
 Requirements: Linux, [uv](https://docs.astral.sh/uv/), an NVIDIA GPU (developed on a 24 GB RTX 3090)
-and a driver that supports CUDA 12, and about 9 GB of free disk (4.2 GB of model weights, 55 MB of
-data, the rest caches).
+with a driver that supports CUDA 12, and about 16 GB of free disk: 7.2 GB for the Python environment
+(PyTorch and its CUDA libraries), 4.2 GB of model weights, 55 MB of data and 3.9 GB of caches, all
+but 0.6 GB of which come from the chunking ablation.
 
 ```bash
 git clone https://github.com/HajibagheriLabs/KnowledgeQA-RAG.git
@@ -301,9 +302,10 @@ Every metric is deterministic. Rerunning on the same machine reproduces every me
 the TREC run files byte for byte. On a different GPU, fp16 encoder arithmetic may move scores in
 the last digits. Latencies depend on the hardware.
 
-Each run writes its exact config and TREC run files to a timestamped `runs/` directory and logs
-to a local MLflow store (`mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db`). To
-recompute a run's metrics with pytrec_eval:
+Each run writes its exact config and its results, including TREC run files for retrieval, to a
+timestamped `runs/` directory and logs them to a local MLflow store
+(`.venv/bin/mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db`). To recompute a run's
+metrics with pytrec_eval:
 
 ```bash
 uv pip install --python .venv/bin/python -e ".[crosscheck]"
