@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from knowledgeqa.config import load_config
 from knowledgeqa.ingest import load_squad, split_by_article
+from knowledgeqa.runtime import log_result, start_run, start_tracking
 from knowledgeqa.serve import create_app
 
 STAGES = ("retrieval", "rerank", "reader", "end_to_end")
@@ -33,6 +34,8 @@ def main() -> None:
     parser.add_argument("--config", default="configs/default.yaml")
     args = parser.parse_args()
     config = load_config(args.config)
+    run_dir = start_run(config, "latency")
+    start_tracking(config)
     serve = config.serve
 
     questions = load_squad(config, config.e2e.eval_split)
@@ -64,30 +67,45 @@ def main() -> None:
                 timings["end_to_end"].append(elapsed)
 
         gpu = torch.cuda.get_device_name() if health["device"] == "cuda" else "none"
-        rows += [
-            {
-                "pipeline": pipeline,
-                "served": pipeline == serve.pipeline,
-                "stage": stage,
+        stats = {
+            stage: {
                 "p50_ms": float(np.percentile(values, 50)),
                 "p95_ms": float(np.percentile(values, 95)),
                 "mean_ms": float(np.mean(values)),
                 "queries": len(values),
-                "warmup_discarded": serve.warmup_queries,
-                "paragraphs": health["paragraphs"],
-                "reranked_paragraphs": settings.e2e.rerank_depth
-                if settings.serve.rerank
-                else 0,
-                "passages_read": config.e2e.top_k,
-                "abstained": abstained,
-                "device": health["device"],
-                "gpu": gpu,
-                "cpu": cpu_name(),
-                "cpu_threads": config.cpu_threads,
             }
             for stage, values in timings.items()
             if not np.isnan(values).all()
+        }
+        params = {
+            "pipeline": pipeline,
+            "served": pipeline == serve.pipeline,
+            "warmup_discarded": serve.warmup_queries,
+            "paragraphs": health["paragraphs"],
+            "reranked_paragraphs": settings.e2e.rerank_depth
+            if settings.serve.rerank
+            else 0,
+            "passages_read": config.e2e.top_k,
+            "abstained": abstained,
+            "device": health["device"],
+            "gpu": gpu,
+            "cpu": cpu_name(),
+            "cpu_threads": config.cpu_threads,
+            "seed": config.seed,
+        }
+        rows += [
+            {"pipeline": pipeline, "served": params["served"], "stage": stage}
+            | values
+            | params
+            for stage, values in stats.items()
         ]
+        metrics = {
+            f"{stage}_{name}": value
+            for stage, values in stats.items()
+            for name, value in values.items()
+            if name != "queries"
+        }
+        log_result(f"latency-{pipeline}", params, metrics, run_dir)
         # the next pipeline should not run beside this one's weights
         del client
         gc.collect()
@@ -95,8 +113,9 @@ def main() -> None:
 
     frame = pd.DataFrame(rows).round(2)
     frame.to_csv(config.paths.reports / "latency.csv", index=False)
+    frame.to_csv(run_dir / "latency.csv", index=False)
     print(frame[["pipeline", "stage", "p50_ms", "p95_ms", "mean_ms"]].to_string())
-    print(f"wrote {config.paths.reports / 'latency.csv'}")
+    print(f"wrote {config.paths.reports / 'latency.csv'} and {run_dir}")
 
 
 if __name__ == "__main__":
